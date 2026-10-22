@@ -1,0 +1,22 @@
+{
+  "name": "starchess",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "smoke": "node tools/smoke.mjs",
+    "arena": "vite-node tools/arena.ts"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.61.1",
+    "typescript": "^5.6.0",
+    "vite": "^6.0.0",
+    "vite-node": "^2.1.9",
+    "vitest": "^2.1.0"
+  }
+}
