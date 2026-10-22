@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  // Local builds are portable; Pages serves the site from /starchess_ts/.
+  // Relative asset paths, so the build works from any base path.
   base: "./",
   server: { host: true },
   build: { target: "es2022", outDir: "dist" },

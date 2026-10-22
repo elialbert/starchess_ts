@@ -62,4 +62,7 @@ npm run arena -- 4 random,magpie,tactician   # bot tournament, 4 games per side 
 
 URL parameters: `?white=magpie&black=oracle&speed=fast&paused`.
 
-Pushes to `main` deploy to GitHub Pages (`.github/workflows/pages.yml`).
+Pushes to `main` deploy to [starchess.elialbert.com](https://starchess.elialbert.com)
+through Cloudflare Workers Builds (`npm run build`, then `npx wrangler deploy`).
+`wrangler.jsonc` serves `dist/` as static assets; only `/api/*` runs
+`worker/index.ts`, the place for a backend.
