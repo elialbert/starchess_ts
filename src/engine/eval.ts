@@ -4,7 +4,9 @@ import { KNIGHT_TARGETS } from "./rules";
 /**
  * The tunable evaluation. It's linear in its weights: every term is a weight
  * times a count (white's minus black's), so `evaluate` can also report the
- * counts ("trace") for Texel tuning (tools/texel.ts).
+ * counts ("trace") for Texel tuning (tools/texel.ts). Each feature has a
+ * middlegame and an endgame weight ("eg.<name>"), blended by the material
+ * left on the board.
  */
 
 export const NSQ = SPACE_COUNT + 1;
@@ -31,10 +33,10 @@ const ORB = [Int8Array.from(ORBIT), Int8Array.from({ length: NSQ }, (_, s) => (s
 
 // ---- parameter layout ----
 
-export const PARAM_NAMES: string[] = [];
+const FEATURES: string[] = [];
 const block = (name: string, n: number) => {
-  const start = PARAM_NAMES.length;
-  for (let i = 0; i < n; i++) PARAM_NAMES.push(n === 1 ? name : `${name}[${i}]`);
+  const start = FEATURES.length;
+  for (let i = 0; i < n; i++) FEATURES.push(n === 1 ? name : `${name}[${i}]`);
   return start;
 };
 /** material, by piece type (index 0 and the king unused) */
@@ -57,11 +59,18 @@ export const I_LTHREAT = block("lthreat", 7);
 export const I_PDEF = block("pdef", 1);
 /** side to move */
 export const I_TEMPO = block("tempo", 1);
+/** number of features; weight i is feature i's middlegame weight, NF + i its endgame weight */
+export const NF = FEATURES.length;
+export const PARAM_NAMES: readonly string[] = [...FEATURES, ...FEATURES.map((n) => "eg." + n)];
 export const NPARAMS = PARAM_NAMES.length;
 
 export type Weights = Float64Array;
 
-/** Hand-set starting weights (tools/texel.ts improves on them). */
+/** non-pawn material for the game phase: knight, bishop, rook 1, queen 2; 10 at the start */
+const PHASE = [0, 0, 1, 1, 1, 2, 0];
+const PHASE_MAX = 10;
+
+/** Hand-set starting weights (tools/texel.ts improves on them), the same in middlegame and endgame. */
 export function baseWeights(): Weights {
   const w = new Float64Array(NPARAMS);
   [0, 100, 450, 350, 400, 900, 0].forEach((v, t) => (w[I_VAL + t] = v));
@@ -81,14 +90,17 @@ export function baseWeights(): Weights {
   [0, 0, -20, -15, -20, -60, 0].forEach((v, t) => (w[I_LTHREAT + t] = v));
   w[I_PDEF] = 8;
   w[I_TEMPO] = 15;
+  w.copyWithin(NF, 0, NF);
   return w;
 }
 
 export const weightsToJSON = (w: Weights) => Object.fromEntries(PARAM_NAMES.map((n, i) => [n, Math.round(w[i]! * 10) / 10]));
+/** Weights from JSON; an endgame weight that's missing takes its middlegame value. */
 export function weightsFromJSON(o: Record<string, number>): Weights {
   const w = baseWeights();
-  PARAM_NAMES.forEach((n, i) => {
+  FEATURES.forEach((n, i) => {
     if (typeof o[n] === "number") w[i] = o[n]!;
+    w[NF + i] = typeof o["eg." + n] === "number" ? o["eg." + n]! : w[i]!;
   });
   return w;
 }
@@ -111,9 +123,13 @@ const RANK = [0, 1, 3, 3, 3, 9, 100];
 let score = 0;
 let curW: ArrayLike<number> = [];
 let curTrace: Float64Array | null = null;
+let mgF = 1, egF = 0;
 function add(i: number, v: number) {
-  score += curW[i]! * v;
-  if (curTrace) curTrace[i]! += v;
+  score += (curW[i]! * mgF + curW[NF + i]! * egF) * v;
+  if (curTrace) {
+    curTrace[i]! += v * mgF;
+    curTrace[NF + i]! += v * egF;
+  }
 }
 
 const att = [new Int8Array(NSQ), new Int8Array(NSQ)];
@@ -130,6 +146,10 @@ export function evaluate(cells: Int8Array, side: number, W: ArrayLike<number>, t
   curW = W;
   curTrace = trace ?? null;
   score = 0;
+  let phase = 0;
+  for (let s = 1; s < NSQ; s++) phase += PHASE[cells[s]! & 7]!;
+  mgF = Math.min(phase, PHASE_MAX) / PHASE_MAX;
+  egF = 1 - mgF;
   for (let c = 0; c < 2; c++) {
     att[c]!.fill(0);
     patt[c]!.fill(0);

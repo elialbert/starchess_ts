@@ -176,7 +176,7 @@ export function search(g: GameState, timeMs: number, rng: Rng, style?: Int16Arra
   const color = g.turn;
   const ctx: SearchCtx = { cells: g.cells.slice(), deadline: performance.now() + timeMs, nodes: 0, style };
   // shuffle first so equal moves are picked at random, then put the forcing ones up front
-  let root = legalPlayMoves(ctx.cells, color);
+  let root = legalPlayMoves(ctx.cells, color, g.limping);
   for (let i = root.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
     [root[i], root[j]] = [root[j]!, root[i]!];

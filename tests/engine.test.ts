@@ -111,3 +111,61 @@ describe("engine search", () => {
     expect(r.depth).toBeGreaterThan(1);
   });
 });
+
+describe("static exchange evaluation", () => {
+  const see = (pieces: Record<number, string>, from: number, to: number) => {
+    const pos = Position.fromGame(position(pieces));
+    const before = [...pos.cells];
+    const v = pos.see(from | (to << 6));
+    expect([...pos.cells]).toEqual(before);
+    return v;
+  };
+
+  it("wins an undefended piece", () => {
+    // knight 19 takes the queen on 22, nothing recaptures
+    expect(see({ 4: "wK", 34: "bK", 19: "wN", 22: "bQ" }, 19, 22)).toBe(900);
+  });
+
+  it("loses the queen for a defended pawn", () => {
+    // queen 13 takes the pawn on 14, which black's pawn on 20 defends
+    const pieces = { 4: "wK", 34: "bK", 13: "wQ", 14: "bP", 20: "bP" };
+    expect(Position.fromGame(position(pieces)).attacked(14, 1)).toBe(true);
+    expect(see(pieces, 13, 14)).toBe(100 - 900);
+    // with a white rook behind on 12, white takes back: pawn, queen, pawn
+    expect(see({ ...pieces, 12: "wR" }, 13, 14)).toBe(100 - 900 + 100);
+  });
+
+  it("never claims more than the captured piece, and leaves the board alone", () => {
+    for (const g of [...randomPositions(13, 4)].slice(0, 200)) {
+      const pos = Position.fromGame(g);
+      const e = new Engine(baseWeights(), { ttBits: 8 });
+      for (const m of e.rootMoves(pos)) {
+        if (!pos.cells[moveTo(m)]) continue;
+        expect(pos.see(m)).toBeLessThanOrEqual(900);
+      }
+    }
+  });
+});
+
+describe("limping pawns in the engine", () => {
+  it("a pawn that captured onto its starting space doesn't get the double step, in search either", () => {
+    let g = position({ 12: "wP", 18: "bP", 4: "wK", 34: "bK" });
+    const play = (from: number, to: number) => (g = applyMove(g, legalMoves(g).find((m) => m.from === from && m.to === to)!));
+    play(12, 18);
+    play(34, 33);
+    const pos = Position.fromGame(g);
+    const e = new Engine(baseWeights(), { ttBits: 8 });
+    expect(e.rootMoves(pos).filter((m) => moveFrom(m) === 18).map(moveTo)).toEqual([19]);
+    // make/unmake keeps it
+    for (const m of e.rootMoves(pos)) {
+      pos.make(m);
+      pos.unmake(m);
+    }
+    expect(pos.limp).toBe(g.limping);
+    // and directly in the engine: capture onto 18 from scratch
+    const fresh = Position.fromGame(position({ 12: "wP", 18: "bP", 4: "wK", 34: "bK" }));
+    fresh.make(12 | (18 << 6));
+    fresh.make(34 | (33 << 6));
+    expect(e.rootMoves(fresh).filter((m) => moveFrom(m) === 18).map(moveTo)).toEqual([19]);
+  });
+});

@@ -7,8 +7,9 @@ import { KNIGHT_TURNS, MIRROR_V, N, NE, NEIGHBORS, NW, S, SE, SPACE_COUNT, SW } 
  *   its five back spaces. The original let players arrange those; here each
  *   game draws one arrangement for white and black gets its mirror image.
  * - Pawns step forward (white north, black south), may step twice from their
- *   starting space, and capture one space diagonally forward. A pawn reaching
- *   the enemy's back spaces promotes.
+ *   starting space, and capture one space diagonally forward. A pawn that
+ *   captures onto one of its starting spaces "limps": it can't step twice from
+ *   there (Polgar's rule). A pawn reaching the enemy's back spaces promotes.
  * - Bishops slide along the four diagonal directions, queens along all six.
  * - Rooks slide north/south, and may also take a single non-capturing step
  *   diagonally.
@@ -67,6 +68,8 @@ const IS_PAWN_START = PAWN_SPACES.map((spaces) => {
   for (const s of spaces) set[s] = true;
   return set;
 });
+/** LIMP_BIT[space]: the bit for a pawn starting space in GameState.limping, or -1. */
+export const LIMP_BIT: readonly number[] = Array.from({ length: SPACE_COUNT + 1 }, (_, s) => PAWN_SPACES.flat().indexOf(s));
 /** IS_PROMOTION[color][space]: a pawn of `color` arriving here promotes. */
 const IS_PROMOTION = [BACK_SPACES[1]!, BACK_SPACES[0]!].map((spaces) => {
   const set = new Array<boolean>(SPACE_COUNT + 1).fill(false);
@@ -110,6 +113,8 @@ export interface GameState {
   ply: number;
   /** plies since the last capture or pawn move */
   quiet: number;
+  /** bits (LIMP_BIT) of starting spaces holding a pawn that got there by capturing: it can't step twice */
+  limping: number;
   /** position keys since the last irreversible move, for repetition */
   seen: Record<string, number>;
 }
@@ -130,7 +135,7 @@ export function newGame(setup: Setup = CLASSIC_SETUP): GameState {
     cells[s] = piece(setup[i]!, WHITE);
     cells[MIRROR_V[s]!] = piece(setup[i]!, BLACK);
   });
-  const g: GameState = { cells, turn: WHITE, ply: 0, quiet: 0, seen: {} };
+  const g: GameState = { cells, turn: WHITE, ply: 0, quiet: 0, limping: 0, seen: {} };
   g.seen[positionKey(g)] = 1;
   return g;
 }
@@ -143,12 +148,23 @@ export function position(pieces: Record<number, string>, turn: Color = WHITE): G
     const t = PIECE_LETTER.indexOf(code.slice(1) as "K");
     cells[+s] = piece((t > 0 ? t : PAWN) as PieceType, c);
   }
-  const g: GameState = { cells, turn, ply: 0, quiet: 0, seen: {} };
+  const g: GameState = { cells, turn, ply: 0, quiet: 0, limping: 0, seen: {} };
   g.seen[positionKey(g)] = 1;
   return g;
 }
 
-export const positionKey = (g: Pick<GameState, "turn" | "cells">) => g.turn + ":" + g.cells.join(",");
+export const positionKey = (g: Pick<GameState, "turn" | "cells" | "limping">) => `${g.turn}:${g.cells.join(",")}:${g.limping}`;
+
+/** `limping` after move `m`: the spaces it leaves and lands on are cleared, and a pawn capturing onto its own starting space limps. */
+export function nextLimping(limping: number, m: Move): number {
+  const fb = LIMP_BIT[m.from]!, tb = LIMP_BIT[m.to]!;
+  if (fb >= 0) limping &= ~(1 << fb);
+  if (tb >= 0) {
+    limping &= ~(1 << tb);
+    if (m.captured && !m.promo && typeOf(m.piece) === PAWN && IS_PAWN_START[colorOf(m.piece)]![m.to]) limping |= 1 << tb;
+  }
+  return limping;
+}
 
 // ---- move generation (on bare cell arrays, so the search can use it too) ----
 
@@ -174,7 +190,7 @@ function pushPawn(from: number, to: number, p: number, captured: number, color: 
 }
 
 /** Moves that obey each piece's pattern, ignoring whether they leave the king in check. */
-export function pseudoMoves(cells: number[], color: Color, out: Move[] = []): Move[] {
+export function pseudoMoves(cells: number[], color: Color, out: Move[] = [], limping = 0): Move[] {
   for (let from = 1; from <= SPACE_COUNT; from++) {
     const p = cells[from]!;
     if (!p || colorOf(p) !== color) continue;
@@ -185,7 +201,8 @@ export function pseudoMoves(cells: number[], color: Color, out: Move[] = []): Mo
         if (fwd && !cells[fwd]) {
           pushPawn(from, fwd, p, 0, color, out);
           const two = NEIGHBORS[fwd]![PAWN_FORWARD[color]!]!;
-          if (IS_PAWN_START[color]![from] && two && !cells[two]) pushPawn(from, two, p, 0, color, out);
+          if (IS_PAWN_START[color]![from] && !(limping & (1 << LIMP_BIT[from]!)) && two && !cells[two])
+            pushPawn(from, two, p, 0, color, out);
         }
         for (const d of PAWN_CAPTURES[color]!) {
           const s = nb[d]!;
@@ -289,9 +306,9 @@ export function unmakeMove(cells: number[], m: Move) {
 }
 
 /** Moves for `color` that don't leave its own king attacked. */
-export function legalPlayMoves(cells: number[], color: Color): Move[] {
+export function legalPlayMoves(cells: number[], color: Color, limping = 0): Move[] {
   const out: Move[] = [];
-  for (const m of pseudoMoves(cells, color)) {
+  for (const m of pseudoMoves(cells, color, [], limping)) {
     makeMove(cells, m);
     if (!inCheck(cells, color)) out.push(m);
     unmakeMove(cells, m);
@@ -300,7 +317,7 @@ export function legalPlayMoves(cells: number[], color: Color): Move[] {
 }
 
 export function legalMoves(g: GameState): Move[] {
-  return legalPlayMoves(g.cells, g.turn);
+  return legalPlayMoves(g.cells, g.turn, g.limping);
 }
 
 /** The state after `m`, which must be legal. The input is left untouched. */
@@ -313,6 +330,7 @@ export function applyMove(g: GameState, m: Move): GameState {
     turn: other(g.turn),
     ply: g.ply + 1,
     quiet: irreversible ? 0 : g.quiet + 1,
+    limping: nextLimping(g.limping, m),
     seen: irreversible ? {} : { ...g.seen }
   };
   const key = positionKey(next);

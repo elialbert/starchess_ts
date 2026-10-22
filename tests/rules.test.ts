@@ -17,6 +17,7 @@ import {
   parseSetup,
   piece,
   position,
+  positionKey,
   setupName
 } from "../src/engine/rules";
 
@@ -108,5 +109,52 @@ describe("game end", () => {
       for (const [from, to] of shuffle) g = applyMove(g, legalMoves(g).find((m) => m.from === from && m.to === to)!);
     }
     expect(outcome(g)?.reason).toBe("repetition");
+  });
+});
+
+describe("limping pawns (Polgar's rule)", () => {
+  const play = (g: ReturnType<typeof newGame>, from: number, to: number) => {
+    const m = legalMoves(g).find((m) => m.from === from && m.to === to);
+    if (!m) throw new Error(`${from}-${to} not legal`);
+    return applyMove(g, m);
+  };
+
+  it("a pawn that captured onto a starting space can't step twice from it", () => {
+    let g = position({ 12: "wP", 18: "bP", 4: "wK", 34: "bK" });
+    g = play(g, 12, 18);
+    g = play(g, 34, 33);
+    expect(targets(legalMoves(g), 18)).toEqual([19]);
+    // and it stays limping until it moves on
+    g = play(g, 4, 5);
+    g = play(g, 33, 34);
+    expect(targets(legalMoves(g), 18)).toEqual([19]);
+    g = play(g, 18, 19);
+    expect(g.limping).toBe(0);
+  });
+
+  it("an unmoved pawn on the same space still can", () => {
+    const g = position({ 18: "wP", 4: "wK", 34: "bK" });
+    expect(targets(legalMoves(g), 18)).toEqual([19, 20]);
+  });
+
+  it("works for black too, and the flag goes when the pawn is taken", () => {
+    // black's pawn on 21 takes south-west onto 15, one of black's starting spaces
+    let g = position({ 21: "bP", 15: "wP", 13: "wQ", 4: "wK", 34: "bK" }, BLACK);
+    g = play(g, 21, 15);
+    expect(g.limping).not.toBe(0);
+    g = play(g, 4, 5);
+    expect(targets(legalMoves(g), 15)).toEqual([14]);
+    // the queen takes it: nothing limps any more
+    g = play(g, 34, 33);
+    g = play(g, 13, 14);
+    g = play(g, 33, 34);
+    g = play(g, 14, 15);
+    expect(g.limping).toBe(0);
+  });
+
+  it("is part of the position key", () => {
+    const a = position({ 12: "wP", 18: "bP", 4: "wK", 34: "bK" });
+    const b = play(a, 12, 18);
+    expect(positionKey(b)).toContain(`:${b.limping}`);
   });
 });

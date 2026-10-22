@@ -1,6 +1,6 @@
 import { NEIGHBORS } from "./board";
 import { NSQ, type Weights, evaluate } from "./eval";
-import { BACK_SPACES, type GameState, KNIGHT_TARGETS, type Move, PAWN_SPACES, legalMoves } from "./rules";
+import { BACK_SPACES, type GameState, KNIGHT_TARGETS, LIMP_BIT, type Move, PAWN_SPACES, legalMoves } from "./rules";
 import { DEFAULT_WEIGHTS } from "./weights";
 
 /**
@@ -55,6 +55,8 @@ const zrng = (() => {
 const Z_LO = Int32Array.from({ length: 16 * NSQ }, zrng);
 const Z_HI = Int32Array.from({ length: 16 * NSQ }, zrng);
 const Z_SIDE_LO = zrng(), Z_SIDE_HI = zrng();
+const Z_LIMP_LO = Int32Array.from({ length: 10 }, zrng);
+const Z_LIMP_HI = Int32Array.from({ length: 10 }, zrng);
 
 // ---- position ----
 
@@ -64,6 +66,8 @@ export class Position {
   king = [0, 0];
   lo = 0;
   hi = 0;
+  /** pawns that captured onto a starting space and can't step twice (GameState.limping) */
+  limp = 0;
   /** hashes of every position so far (game + search path), for repetition */
   private histLo = new Int32Array(1024);
   private histHi = new Int32Array(1024);
@@ -71,20 +75,21 @@ export class Position {
   private histQuiet = new Int32Array(1024);
   sp = 0;
   private undoCap = new Int8Array(1024);
+  private undoLimp = new Int16Array(1024);
 
   static fromGame(g: GameState): Position {
     const pos = new Position();
     // earlier positions since the last irreversible move, for repetition
-    const earlier = Object.entries(g.seen).filter(([k]) => k !== `${g.turn}:${g.cells.join(",")}`);
+    const earlier = Object.entries(g.seen).filter(([k]) => k !== `${g.turn}:${g.cells.join(",")}:${g.limping}`);
     for (const [key] of earlier) {
-      const [turn, cells] = key.split(":");
-      pos.load(cells!.split(",").map(Number), Number(turn));
+      const [turn, cells, limping] = key.split(":");
+      pos.load(cells!.split(",").map(Number), Number(turn), Number(limping));
       pos.histLo[pos.sp] = pos.lo;
       pos.histHi[pos.sp] = pos.hi;
       pos.histQuiet[pos.sp] = pos.sp;
       pos.sp++;
     }
-    pos.load(g.cells, g.turn);
+    pos.load(g.cells, g.turn, g.limping);
     pos.histLo[pos.sp] = pos.lo;
     pos.histHi[pos.sp] = pos.hi;
     pos.histQuiet[pos.sp] = pos.sp;
@@ -92,16 +97,23 @@ export class Position {
   }
 
   /** A position with no history, from a cells array (index 0 unused). */
-  static fromCells(cells: ArrayLike<number>, side: number): Position {
+  static fromCells(cells: ArrayLike<number>, side: number, limping = 0): Position {
     const pos = new Position();
-    pos.load(cells, side);
+    pos.load(cells, side, limping);
     pos.histLo[0] = pos.lo;
     pos.histHi[0] = pos.hi;
     return pos;
   }
 
-  private load(cells: ArrayLike<number>, side: number) {
+  private load(cells: ArrayLike<number>, side: number, limping: number) {
     this.lo = this.hi = 0;
+    this.limp = limping;
+    for (let b = 0; b < 10; b++) {
+      if (limping & (1 << b)) {
+        this.lo ^= Z_LIMP_LO[b]!;
+        this.hi ^= Z_LIMP_HI[b]!;
+      }
+    }
     for (let s = 1; s < NSQ; s++) {
       const p = cells[s]!;
       this.cells[s] = p;
@@ -133,6 +145,25 @@ export class Position {
     c[from] = 0;
     c[to] = np;
     if ((p & 7) === 6) this.king[p >> 3] = to;
+    // limping pawns: whatever stood on the two spaces has gone; a pawn capturing onto its own start space limps
+    const oldLimp = this.limp;
+    this.undoLimp[this.sp] = oldLimp;
+    if (oldLimp || ((p & 7) === 1 && cap)) {
+      let limp = oldLimp;
+      const fb = LIMP_BIT[from]!, tb = LIMP_BIT[to]!;
+      if (fb >= 0) limp &= ~(1 << fb);
+      if (tb >= 0) {
+        limp &= ~(1 << tb);
+        if ((p & 7) === 1 && cap && !promo && IS_START[p >> 3]![to]) limp |= 1 << tb;
+      }
+      for (let diff = limp ^ oldLimp, b = 0; diff; diff >>= 1, b++) {
+        if (diff & 1) {
+          lo ^= Z_LIMP_LO[b]!;
+          hi ^= Z_LIMP_HI[b]!;
+        }
+      }
+      this.limp = limp;
+    }
     this.side ^= 1;
     this.lo = lo;
     this.hi = hi;
@@ -150,6 +181,7 @@ export class Position {
     if (promo) p = 1 | (p & 8);
     c[from] = p;
     c[to] = this.undoCap[sp]!;
+    this.limp = this.undoLimp[sp]!;
     if ((p & 7) === 6) this.king[p >> 3] = from;
     this.side ^= 1;
     this.lo = this.histLo[sp]!;
@@ -215,6 +247,71 @@ export class Position {
     return false;
   }
 
+  /** The least valuable piece of `by` attacking `sq`, or 0. */
+  private leastAttacker(sq: number, by: number): number {
+    const c = this.cells;
+    const pawn = 1 | (by << 3);
+    for (const d of PAWN_CAP[by]!) {
+      const n = NB[sq * 6 + OPP[d]!]!;
+      if (n && c[n] === pawn) return n;
+    }
+    const knight = 2 | (by << 3);
+    for (const n of KN[sq]!) if (c[n] === knight) return n;
+    // sliders: the first piece along each line, cheapest type wins
+    let best = 0, bestType = 9;
+    for (let d = 0; d < 6; d++) {
+      let n = NB[sq * 6 + d]!;
+      const first = n;
+      while (n) {
+        const p = c[n]!;
+        if (p) {
+          if (p >> 3 === by) {
+            const t = p & 7;
+            const ok = t === 5 || (t === 3 && IS_DIAG[d]) || (t === 4 && (d === 0 || d === 3)) || (t === 6 && n === first);
+            if (ok && t < bestType) {
+              best = n;
+              bestType = t;
+            }
+          }
+          break;
+        }
+        n = NB[n * 6 + d]!;
+      }
+    }
+    return best;
+  }
+
+  /** Static exchange evaluation of capture `m`: what the mover nets if both sides keep recapturing with their cheapest piece. */
+  see(m: number): number {
+    const c = this.cells;
+    const from = m & 63, to = (m >> 6) & 63;
+    const removed: number[] = [];
+    const gain = new Array<number>(40);
+    let d = 0;
+    gain[0] = SEE_VAL[c[to]! & 7]!;
+    let attacker = from;
+    let side = this.side;
+    let onSquare = c[from]! & 7;
+    for (;;) {
+      removed.push(attacker, c[attacker]!);
+      c[attacker] = 0;
+      side ^= 1;
+      const next = this.leastAttacker(to, side);
+      if (!next) break;
+      // a king may only recapture onto an undefended space
+      if ((c[next]! & 7) === 6 && this.leastAttacker(to, side ^ 1)) break;
+      d++;
+      gain[d] = SEE_VAL[onSquare]! - gain[d - 1]!;
+      // neither side has to continue a losing exchange
+      if (Math.max(-gain[d - 1]!, gain[d]!) < 0) break;
+      onSquare = c[next]! & 7;
+      attacker = next;
+    }
+    for (let i = removed.length - 2; i >= 0; i -= 2) c[removed[i]!] = removed[i + 1]!;
+    for (; d > 0; d--) gain[d - 1] = -Math.max(-gain[d - 1]!, gain[d]!);
+    return gain[0]!;
+  }
+
   inCheck(side = this.side) {
     return this.attacked(this.king[side]!, side ^ 1);
   }
@@ -242,7 +339,7 @@ export class Position {
           else if (!capturesOnly) {
             out[n++] = encode(s, f);
             const f2 = NB[f * 6 + PAWN_FWD[side]!]!;
-            if (IS_START[side]![s] && f2 && !c[f2]) {
+            if (IS_START[side]![s] && !(this.limp & (1 << LIMP_BIT[s]!)) && f2 && !c[f2]) {
               if (IS_PROMO[side]![f2]) for (const pt of PROMO_TYPES) out[n++] = encode(s, f2, pt);
               else out[n++] = encode(s, f2);
             }
@@ -319,6 +416,10 @@ export interface SearchOptions {
   rfpMargin: number;
   deltaMargin: number;
   checkExt: boolean;
+  /** skip captures that lose material (by SEE) in quiescence */
+  seePrune: boolean;
+  /** order captures by SEE rather than "defended or not" */
+  seeOrder: boolean;
   aspiration: number;
   /** draw score for the side to move (negative: avoid draws) */
   contempt: number;
@@ -341,6 +442,8 @@ export const DEFAULT_OPTIONS: SearchOptions = {
   rfpMargin: 90,
   deltaMargin: 200,
   checkExt: true,
+  seePrune: false,
+  seeOrder: false,
   aspiration: 40,
   contempt: 0,
   noise: 0,
@@ -437,8 +540,10 @@ export class Engine {
         const cap = c[to]!;
         if (cap || promo) {
           s = (1 << 28) + SEE_VAL[cap & 7]! * 16 - SEE_VAL[c[from]! & 7]! / 16 + (promo ? SEE_VAL[promo]! : 0);
-          // a capture of a lesser piece onto a defended space goes after the killers
-          if (cap && SEE_VAL[cap & 7]! < SEE_VAL[c[from]! & 7]! && this.pos.attacked(to, this.pos.side ^ 1)) s -= 1 << 27;
+          // a capture that loses material goes after the killers
+          if (cap && SEE_VAL[cap & 7]! < SEE_VAL[c[from]! & 7]!) {
+            if (this.opts.seeOrder ? this.pos.see(m) < 0 : this.pos.attacked(to, this.pos.side ^ 1)) s -= 1 << 27;
+          }
           if (promo && promo !== 5) s -= 1 << 27;
         } else if (m === k0) s = (1 << 27) + 2;
         else if (m === k1) s = (1 << 27) + 1;
@@ -485,6 +590,7 @@ export class Engine {
         const promo = (m >> 12) & 7;
         if (promo && promo !== 5) continue;
         if (!promo && best + SEE_VAL[cap]! + this.opts.deltaMargin <= alpha) continue;
+        if (this.opts.seePrune && !promo && this.scores[i]! < 1 << 28 && this.pos.see(m) < 0) continue;
       }
       pos.make(m);
       if (pos.attacked(pos.king[pos.side ^ 1]!, pos.side)) {
@@ -667,7 +773,7 @@ export class Engine {
     const roots = this.rootMoves(pos);
     let result: SearchResult = { move: roots[0] ?? 0, score: 0, depth: 0, nodes: 0, pv: roots.slice(0, 1), timeMs: 0 };
     if (roots.length <= 1) return { ...result, timeMs: performance.now() - t0 };
-    const saved = { cells: pos.cells.slice(), side: pos.side, king: pos.king.slice(), lo: pos.lo, hi: pos.hi, sp: pos.sp };
+    const saved = { cells: pos.cells.slice(), side: pos.side, king: pos.king.slice(), lo: pos.lo, hi: pos.hi, limp: pos.limp, sp: pos.sp };
     let prev = 0;
     for (let depth = 1; depth <= maxDepth; depth++) {
       try {
@@ -704,6 +810,7 @@ export class Engine {
         pos.king = saved.king;
         pos.lo = saved.lo;
         pos.hi = saved.hi;
+        pos.limp = saved.limp;
         pos.sp = saved.sp;
         break;
       }
