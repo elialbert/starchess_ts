@@ -1,11 +1,11 @@
-import { NE, NEIGHBORS, NW, N, S, SE, SPACE_COUNT, SW, KNIGHT_TURNS } from "./board";
+import { KNIGHT_TURNS, MIRROR_V, N, NE, NEIGHBORS, NW, S, SE, SPACE_COUNT, SW } from "./board";
 
 /**
  * Starchess rules, ported from the original Ruby engine (lib/starchess):
  *
- * - Each side starts with five pawns. In the setup phase the players take
- *   turns placing a king, queen, rook, bishop and knight on their five back
- *   spaces, in any arrangement.
+ * - Each side has five pawns, and a king, queen, rook, bishop and knight on
+ *   its five back spaces. The original let players arrange those; here each
+ *   game draws one arrangement for white and black gets its mirror image.
  * - Pawns step forward (white north, black south), may step twice from their
  *   starting space, and capture one space diagonally forward. A pawn reaching
  *   the enemy's back spaces promotes.
@@ -37,19 +37,22 @@ export const PAWN_SPACES: readonly (readonly number[])[] = [
   [5, 12, 18, 23, 29],
   [9, 15, 20, 26, 33]
 ];
-/** Each side's back spaces: where its pieces are placed, and where enemy pawns promote. */
+/** Each side's back spaces: where its pieces start, and where enemy pawns promote. Black's mirror white's. */
 export const BACK_SPACES: readonly (readonly number[])[] = [
   [4, 11, 17, 22, 28],
   [10, 16, 21, 27, 34]
 ];
-export const SETUP_PIECES: readonly PieceType[] = [KING, QUEEN, ROOK, BISHOP, KNIGHT];
+/** A setup: the piece on each of white's back spaces, in BACK_SPACES order. */
+export type Setup = readonly PieceType[];
+export const CLASSIC_SETUP: Setup = [KING, QUEEN, ROOK, BISHOP, KNIGHT];
+/** All 120 arrangements. */
+export const ALL_SETUPS: readonly Setup[] = (function permute(rest: PieceType[]): PieceType[][] {
+  if (rest.length <= 1) return [rest];
+  return rest.flatMap((t, i) => permute([...rest.slice(0, i), ...rest.slice(i + 1)]).map((p) => [t, ...p]));
+})([...CLASSIC_SETUP]);
+export const setupName = (s: Setup) => s.map((t) => PIECE_LETTER[t]).join("");
+export const parseSetup = (name: string): Setup => [...name].map((l) => PIECE_LETTER.indexOf(l as "K") as PieceType);
 export const PROMOTIONS: readonly PieceType[] = [QUEEN, KNIGHT, ROOK, BISHOP];
-
-/** The classic arrangement (the original's "no choose" setup), handy for tests. */
-export const CLASSIC_SETUP: readonly Record<number, PieceType>[] = [
-  { 4: KING, 11: QUEEN, 17: ROOK, 22: BISHOP, 28: KNIGHT },
-  { 10: KNIGHT, 16: BISHOP, 21: ROOK, 27: QUEEN, 34: KING }
-];
 
 const PAWN_FORWARD = [N, S];
 const PAWN_CAPTURES = [
@@ -89,11 +92,10 @@ export const KNIGHT_TARGETS: readonly (readonly number[])[] = Array.from({ lengt
   return [...out].sort((x, y) => x - y);
 });
 
-/** A move: `from` is 0 for a setup-phase placement. */
 export interface Move {
   from: number;
   to: number;
-  /** the piece that moves (or is placed) */
+  /** the piece that moves */
   piece: number;
   /** the piece taken, or 0 */
   captured: number;
@@ -101,15 +103,10 @@ export interface Move {
   promo: number;
 }
 
-export type Phase = "setup" | "play";
-
 export interface GameState {
   /** cells[space]: a piece or 0. Index 0 is unused. */
   cells: number[];
   turn: Color;
-  phase: Phase;
-  /** pieces each side has still to place in the setup phase */
-  reserve: [PieceType[], PieceType[]];
   ply: number;
   /** plies since the last capture or pawn move */
   quiet: number;
@@ -125,50 +122,33 @@ export interface Outcome {
 export const QUIET_LIMIT = 100;
 export const PLY_LIMIT = 400;
 
-export function newGame(): GameState {
+/** A new game from `setup`: white's pieces on its back spaces, black's on the mirror spaces. */
+export function newGame(setup: Setup = CLASSIC_SETUP): GameState {
   const cells = new Array<number>(SPACE_COUNT + 1).fill(0);
   for (const c of [WHITE, BLACK]) for (const s of PAWN_SPACES[c]!) cells[s] = piece(PAWN, c);
-  return {
-    cells,
-    turn: WHITE,
-    phase: "setup",
-    reserve: [[...SETUP_PIECES], [...SETUP_PIECES]],
-    ply: 0,
-    quiet: 0,
-    seen: {}
-  };
-}
-
-/** A game already in the play phase, from a given arrangement (default: the classic one). */
-export function gameFrom(setup: readonly Record<number, PieceType>[] = CLASSIC_SETUP, turn: Color = WHITE): GameState {
-  const g = newGame();
-  for (const c of [WHITE, BLACK]) {
-    for (const [s, t] of Object.entries(setup[c]!)) g.cells[+s] = piece(t, c);
-  }
-  g.reserve = [[], []];
-  g.phase = "play";
-  g.turn = turn;
-  g.seen = { [positionKey(g)]: 1 };
+  BACK_SPACES[WHITE]!.forEach((s, i) => {
+    cells[s] = piece(setup[i]!, WHITE);
+    cells[MIRROR_V[s]!] = piece(setup[i]!, BLACK);
+  });
+  const g: GameState = { cells, turn: WHITE, ply: 0, quiet: 0, seen: {} };
+  g.seen[positionKey(g)] = 1;
   return g;
 }
 
 /** An arbitrary position, for tests and puzzles: `{ 4: "wK", 27: "bQ" }`. */
 export function position(pieces: Record<number, string>, turn: Color = WHITE): GameState {
-  const g = newGame();
-  g.cells.fill(0);
+  const cells = new Array<number>(SPACE_COUNT + 1).fill(0);
   for (const [s, code] of Object.entries(pieces)) {
     const c: Color = code[0] === "w" ? WHITE : BLACK;
     const t = PIECE_LETTER.indexOf(code.slice(1) as "K");
-    g.cells[+s] = piece((t > 0 ? t : PAWN) as PieceType, c);
+    cells[+s] = piece((t > 0 ? t : PAWN) as PieceType, c);
   }
-  g.reserve = [[], []];
-  g.phase = "play";
-  g.turn = turn;
-  g.seen = { [positionKey(g)]: 1 };
+  const g: GameState = { cells, turn, ply: 0, quiet: 0, seen: {} };
+  g.seen[positionKey(g)] = 1;
   return g;
 }
 
-export const positionKey = (g: GameState) => g.turn + ":" + g.cells.join(",");
+export const positionKey = (g: Pick<GameState, "turn" | "cells">) => g.turn + ":" + g.cells.join(",");
 
 // ---- move generation (on bare cell arrays, so the search can use it too) ----
 
@@ -299,16 +279,16 @@ export function inCheck(cells: number[], color: Color): boolean {
 }
 
 export function makeMove(cells: number[], m: Move) {
-  if (m.from) cells[m.from] = 0;
+  cells[m.from] = 0;
   cells[m.to] = m.promo || m.piece;
 }
 
 export function unmakeMove(cells: number[], m: Move) {
   cells[m.to] = m.captured;
-  if (m.from) cells[m.from] = m.piece;
+  cells[m.from] = m.piece;
 }
 
-/** Play-phase moves for `color` that don't leave its own king attacked. */
+/** Moves for `color` that don't leave its own king attacked. */
 export function legalPlayMoves(cells: number[], color: Color): Move[] {
   const out: Move[] = [];
   for (const m of pseudoMoves(cells, color)) {
@@ -320,15 +300,6 @@ export function legalPlayMoves(cells: number[], color: Color): Move[] {
 }
 
 export function legalMoves(g: GameState): Move[] {
-  if (g.phase === "setup") {
-    const out: Move[] = [];
-    for (const t of new Set(g.reserve[g.turn])) {
-      for (const s of BACK_SPACES[g.turn]!) {
-        if (!g.cells[s]) out.push({ from: 0, to: s, piece: piece(t, g.turn), captured: 0, promo: 0 });
-      }
-    }
-    return out;
-  }
   return legalPlayMoves(g.cells, g.turn);
 }
 
@@ -336,19 +307,10 @@ export function legalMoves(g: GameState): Move[] {
 export function applyMove(g: GameState, m: Move): GameState {
   const cells = g.cells.slice();
   makeMove(cells, m);
-  const reserve: [PieceType[], PieceType[]] = [g.reserve[0].slice(), g.reserve[1].slice()];
-  let phase = g.phase;
-  if (!m.from) {
-    const mine = reserve[g.turn];
-    mine.splice(mine.indexOf(typeOf(m.piece)), 1);
-    if (!reserve[0].length && !reserve[1].length) phase = "play";
-  }
-  const irreversible = !m.from || !!m.captured || typeOf(m.piece) === PAWN;
+  const irreversible = !!m.captured || typeOf(m.piece) === PAWN;
   const next: GameState = {
     cells,
     turn: other(g.turn),
-    phase,
-    reserve,
     ply: g.ply + 1,
     quiet: irreversible ? 0 : g.quiet + 1,
     seen: irreversible ? {} : { ...g.seen }
@@ -360,7 +322,6 @@ export function applyMove(g: GameState, m: Move): GameState {
 
 /** How the game has ended, or null while it's still going. */
 export function outcome(g: GameState, moves: Move[] = legalMoves(g)): Outcome | null {
-  if (g.phase === "setup") return null;
   if (!moves.length) {
     return inCheck(g.cells, g.turn)
       ? { winner: other(g.turn), reason: "checkmate" }
@@ -373,13 +334,12 @@ export function outcome(g: GameState, moves: Move[] = legalMoves(g)): Outcome | 
   return null;
 }
 
-/** Short notation, e.g. "Q27x19+", "18-21=N", "K@4" for a placement. */
+/** Short notation, e.g. "Q27x19+", "18-21=N". */
 export function moveLabel(m: Move, after?: GameState): string {
   const letter = PIECE_LETTER[typeOf(m.piece)];
-  if (!m.from) return `${letter}@${m.to}`;
   let s = `${letter}${m.from}${m.captured ? "x" : "-"}${m.to}`;
   if (m.promo) s += "=" + PIECE_LETTER[typeOf(m.promo)];
-  if (after && after.phase === "play" && inCheck(after.cells, after.turn)) {
+  if (after && inCheck(after.cells, after.turn)) {
     s += legalMoves(after).length ? "+" : "#";
   }
   return s;

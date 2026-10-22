@@ -12,9 +12,11 @@ import {
   legalMoves,
   moveLabel,
   newGame,
+  setupName,
   outcome,
   typeOf
 } from "./engine/rules";
+import { randomSetup } from "./engine/setups";
 import { BoardView } from "./ui/board-view";
 import { BotClient } from "./ui/bot-client";
 import "./ui/style.css";
@@ -125,7 +127,8 @@ interface Ply {
 }
 
 const client = new BotClient();
-let game = newGame();
+let setup = randomSetup();
+let game = newGame(setup);
 let plies: Ply[] = [];
 let over: Outcome | null = null;
 let running = params.get("paused") === null;
@@ -146,7 +149,8 @@ const botFor = (c: Color) => (c === WHITE ? settings.white : settings.black);
 
 function startGame() {
   generation++;
-  game = newGame();
+  setup = randomSetup();
+  game = newGame(setup);
   plies = [];
   over = null;
   lastScore = null;
@@ -172,7 +176,8 @@ async function runGame(gen: number) {
     const started = performance.now();
     const res = await client.request(game, botFor(color), gameSeed + game.ply * 7919, gameSeed + color);
     if (gen !== generation) return;
-    const pace = SPEEDS[settings.speed] * (game.phase === "setup" ? 0.45 : 1);
+    // the opening move waits for the pieces to land
+    const pace = Math.max(SPEEDS[settings.speed], game.ply ? 0 : 1200);
     if (!stepping) await sleep(pace - (performance.now() - started));
     if (gen !== generation) return;
     thinking = null;
@@ -231,8 +236,7 @@ function renderPlayers() {
 function renderStatus() {
   const name = (c: Color) => `${COLOR_NAME[c]} (${botInfo(botFor(c)).name})`;
   if (over) statusEl.textContent = over.winner === null ? `Draw by ${over.reason}.` : `Checkmate: ${name(over.winner)} wins.`;
-  else if (game.phase === "setup") statusEl.textContent = `Setup: ${name(game.turn)} places a piece on its back row.`;
-  else statusEl.textContent = `Move ${Math.floor((game.ply - 10) / 2) + 1}: ${name(game.turn)} to play.`;
+  else statusEl.textContent = `Move ${Math.floor(game.ply / 2) + 1}: ${name(game.turn)} to play.`;
 }
 
 function renderEval() {
@@ -255,13 +259,16 @@ function renderEval() {
 
 function renderMoves() {
   movesEl.replaceChildren();
+  const head = document.createElement("li");
+  head.className = "setup";
+  head.textContent = `Setup ${setupName(setup)}, mirrored`;
+  head.title = "White's back row from left to right; black's is the mirror image";
+  movesEl.append(head);
   for (let i = 0; i < plies.length; i += 2) {
     const li = document.createElement("li");
-    const setup = i < 10;
-    li.className = setup ? "setup" : "";
     const num = document.createElement("span");
     num.className = "num";
-    num.textContent = setup ? "·" : String((i - 10) / 2 + 1);
+    num.textContent = String(i / 2 + 1);
     li.append(num);
     for (const p of plies.slice(i, i + 2)) {
       const s = document.createElement("span");

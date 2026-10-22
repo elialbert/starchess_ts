@@ -107,3 +107,12 @@ export const KNIGHT_TURNS: readonly (readonly number[])[] = [
   [S, NE], // southeast
   [SE, N] // northeast
 ];
+
+const CENTERS = Array.from({ length: SPACE_COUNT + 1 }, (_, s) => (s ? hexCenter(s, 1) : [NaN, NaN]));
+const spaceAt = (x: number, y: number) =>
+  Math.max(0, CENTERS.findIndex(([a, b]) => Math.abs(a! - x) < 1e-6 && Math.abs(b! - y) < 1e-6));
+const [XC, YC] = CENTERS[19]!;
+/** Left-right mirror image of each space. */
+export const MIRROR_LR: readonly number[] = CENTERS.map(([x, y], s) => (s ? spaceAt(2 * XC! - x!, y!) : 0));
+/** Top-bottom mirror image of each space: white's side of the board onto black's. */
+export const MIRROR_V: readonly number[] = CENTERS.map(([x, y], s) => (s ? spaceAt(x!, 2 * YC! - y!) : 0));

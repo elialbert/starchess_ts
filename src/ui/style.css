@@ -144,17 +144,6 @@ select {
 .hex.check .mark {
   fill: url(#check-glow);
 }
-.hex.setup-target .mark {
-  stroke: var(--accent);
-  stroke-width: 2.5;
-  stroke-dasharray: 5 4;
-  animation: march 1.2s linear infinite;
-}
-@keyframes march {
-  to {
-    stroke-dashoffset: -18;
-  }
-}
 .space-id {
   font: 600 9px ui-sans-serif, system-ui, sans-serif;
   text-anchor: middle;
@@ -180,6 +169,7 @@ select {
   stroke-linejoin: round;
   paint-order: stroke;
   transition: transform 0.35s;
+  transition-delay: inherit;
 }
 .piece.white text {
   fill: var(--white-piece);
@@ -430,13 +420,6 @@ select {
   overflow-y: auto;
   font: 13px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
-.moves:empty::before {
-  content: "Moves will appear here.";
-  display: block;
-  padding: 4px 14px;
-  color: var(--muted);
-  font-family: ui-sans-serif, system-ui, sans-serif;
-}
 .moves li {
   display: grid;
   grid-template-columns: 34px 1fr 1fr;
@@ -446,7 +429,9 @@ select {
   background: rgba(255, 255, 255, 0.02);
 }
 .moves li.setup {
+  display: block;
   color: var(--muted);
+  font-family: ui-sans-serif, system-ui, sans-serif;
 }
 .moves .num {
   color: var(--muted);

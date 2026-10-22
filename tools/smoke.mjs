@@ -70,6 +70,8 @@ async function checkBoard(when) {
       if (!hex) return "a piece sits off the board";
       const space = +hex.dataset.space;
       if (String(cells[space]) !== g.dataset.piece) return `space ${space} shows ${g.dataset.piece}, game has ${cells[space]}`;
+      const black = cells[space] >> 3 === 1;
+      if (g.classList.contains("black") !== black || g.classList.contains("white") === black) return `space ${space} is drawn in the wrong colour (${g.getAttribute("class")})`;
     }
     return null;
   });
@@ -80,9 +82,6 @@ await page.goto(target.href, { waitUntil: "networkidle" });
 if ((await page.locator(".hex").count()) !== 37) fail("the board doesn't have 37 spaces");
 await shot("start");
 
-// the setup phase, then some play
-await page.waitForFunction(() => window.__sc.game.phase === "play", null, { timeout: 30000 });
-await shot("setup-done");
 await page.waitForFunction(() => window.__sc.plies >= 18 || window.__sc.over, null, { timeout: 60000 });
 await checkBoard("mid-game");
 if (!(await sc(() => window.__sc.over)) && (await page.locator("#banner").isVisible())) fail("the game-over banner shows mid-game");
@@ -101,16 +100,16 @@ if (!(await sc(() => window.__sc.over))) {
   await checkBoard("after a step");
 }
 
-// a new game clears the board back to the pawns
+// a new game resets the board
 await page.click("#new");
 await page.waitForTimeout(300);
 const fresh = await sc(() => ({ plies: window.__sc.plies, pieces: window.__sc.game.cells.filter(Boolean).length }));
-if (fresh.plies !== 0 || fresh.pieces !== 10) fail(`new game didn't reset: ${JSON.stringify(fresh)}`);
+if (fresh.plies !== 0 || fresh.pieces !== 20) fail(`new game didn't reset: ${JSON.stringify(fresh)}`);
 await page.click("#play");
 
 // play on to the end of a game
 await page.waitForFunction(() => window.__sc.over, null, { timeout: 180000 });
-await page.waitForTimeout(800);
+await checkBoard("at the end");
 if (!(await page.locator("#banner").isVisible())) fail("no banner at the end of the game");
 await shot("over");
 const over = await sc(() => window.__sc.over);

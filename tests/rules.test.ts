@@ -1,39 +1,47 @@
 import { describe, expect, it } from "vitest";
+import { MIRROR_V } from "../src/engine/board";
 import {
+  ALL_SETUPS,
   BLACK,
+  KING,
+  KNIGHT,
   KNIGHT_TARGETS,
   type Move,
   WHITE,
   applyMove,
-  gameFrom,
   inCheck,
   legalMoves,
   moveLabel,
   newGame,
   outcome,
-  position
+  parseSetup,
+  piece,
+  position,
+  setupName
 } from "../src/engine/rules";
 
 const targets = (moves: Move[], from: number) => moves.filter((m) => m.from === from).map((m) => m.to).sort((a, b) => a - b);
 
-describe("setup phase", () => {
-  it("alternates placements until both sides have placed five pieces", () => {
-    let g = newGame();
-    expect(legalMoves(g)).toHaveLength(25); // 5 pieces x 5 spaces
-    for (let i = 0; i < 10; i++) {
-      expect(g.phase).toBe("setup");
-      expect(g.turn).toBe(i % 2 ? BLACK : WHITE);
-      g = applyMove(g, legalMoves(g)[0]!);
-    }
-    expect(g.phase).toBe("play");
-    expect(g.turn).toBe(WHITE);
+describe("setups", () => {
+  it("there are 120, and black mirrors white", () => {
+    expect(new Set(ALL_SETUPS.map(setupName)).size).toBe(120);
+    const g = newGame(parseSetup("NBKRQ"));
+    expect(g.cells[4]).toBe(piece(KNIGHT, WHITE));
+    expect(g.cells[10]).toBe(piece(KNIGHT, BLACK));
+    expect(g.cells[17]).toBe(piece(KING, WHITE));
+    expect(g.cells[21]).toBe(piece(KING, BLACK));
     expect(g.cells.filter(Boolean)).toHaveLength(20);
+    for (let s = 1; s <= 37; s++) {
+      const p = g.cells[s]!;
+      const q = g.cells[MIRROR_V[s]!]!;
+      expect(p ? p ^ 8 : 0).toBe(q);
+    }
   });
 });
 
 describe("piece moves", () => {
   it("pawns step, double-step from the start and capture diagonally forward", () => {
-    expect(targets(legalMoves(gameFrom()), 12)).toEqual([13, 14]);
+    expect(targets(legalMoves(newGame()), 12)).toEqual([13, 14]);
     // 13 is blocked by 14, can take on 19 (northeast) but not its own piece on 7 (northwest)
     const g = position({ 13: "wP", 14: "bP", 19: "bP", 7: "wN", 4: "wK", 34: "bK" });
     expect(targets(legalMoves(g), 13)).toEqual([19]);
@@ -83,7 +91,7 @@ describe("game end", () => {
   });
 
   it("notates moves", () => {
-    const g = gameFrom();
+    const g = newGame();
     const m = legalMoves(g).find((m) => m.from === 12 && m.to === 14)!;
     expect(moveLabel(m, applyMove(g, m))).toBe("12-14");
   });

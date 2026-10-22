@@ -41,7 +41,14 @@ describe("bots", () => {
     expect(r.move.to).toBe(22);
   });
 
-  it("every bot can play a whole game quickly", () => {
+  it("every quick bot can play a whole game", () => {
     for (const b of BOTS.filter((b) => !b.timeMs)) expect(playOut(b.id, b.id, 7).res).toBeTruthy();
+  });
+
+  it("the engine bots return legal moves with a score", () => {
+    const g = newGame();
+    const r = chooseMove(g, "tactician", makeRng(1), 5);
+    expect(legalMoves(g).some((m) => sameMove(m, r.move))).toBe(true);
+    expect(r.depth).toBeGreaterThan(2);
   });
 });

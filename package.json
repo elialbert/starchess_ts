@@ -10,9 +10,17 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "smoke": "node tools/smoke.mjs",
-    "arena": "vite-node tools/arena.ts"
+    "setups": "vite-node tools/setups.ts",
+    "match": "vite-node tools/match.ts",
+    "selfplay": "vite-node tools/selfplay.ts",
+    "texel": "vite-node tools/texel.ts",
+    "spsa": "vite-node tools/spsa.ts",
+    "bench": "vite-node tools/bench.ts"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
+    "cf": "^1.0.0-beta.20",
+    "esbuild": "^0.25.0",
     "playwright-core": "^1.61.1",
     "typescript": "^5.6.0",
     "vite": "^6.0.0",

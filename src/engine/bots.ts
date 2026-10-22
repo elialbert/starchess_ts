@@ -1,12 +1,11 @@
 import { AXIAL, NEIGHBORS, SPACE_COUNT } from "./board";
+import { Engine, Position, toRulesMove } from "./engine";
 import {
-  BACK_SPACES,
   type Color,
   type GameState,
   KING,
   type Move,
   PAWN,
-  applyMove,
   WHITE,
   colorOf,
   inCheck,
@@ -21,7 +20,7 @@ import {
   unmakeMove
 } from "./rules";
 
-export type BotId = "random" | "magpie" | "tactician" | "oracle";
+export type BotId = "random" | "magpie" | "classic" | "tactician" | "oracle";
 
 export interface BotInfo {
   id: BotId;
@@ -34,8 +33,9 @@ export interface BotInfo {
 export const BOTS: readonly BotInfo[] = [
   { id: "random", name: "Dice", blurb: "Picks any legal move at random." },
   { id: "magpie", name: "Magpie", blurb: "Grabs whatever it can, tries not to hang pieces. One move deep." },
-  { id: "tactician", name: "Tactician", blurb: "Alpha-beta search, about a third of a second a move.", timeMs: 300 },
-  { id: "oracle", name: "Oracle", blurb: "Alpha-beta search, about 1.5 seconds a move.", timeMs: 1500 }
+  { id: "classic", name: "Classic", blurb: "The first version's plain alpha-beta search, about a third of a second a move.", timeMs: 300 },
+  { id: "tactician", name: "Tactician", blurb: "The tuned engine, about a quarter of a second a move.", timeMs: 250 },
+  { id: "oracle", name: "Oracle", blurb: "The tuned engine, about 1.5 seconds a move.", timeMs: 1500 }
 ];
 export const botInfo = (id: BotId) => BOTS.find((b) => b.id === id) ?? BOTS[0]!;
 
@@ -225,45 +225,6 @@ export function search(g: GameState, timeMs: number, rng: Rng, style?: Int16Arra
 
 // ---- the bots ----
 
-/** How badly `me` could be hit in the opening: `them`'s checks, with a mate counting for a lot. */
-function openingDanger(cells: number[], me: Color): number {
-  const them = other(me);
-  let danger = 0;
-  for (const m of legalPlayMoves(cells, them)) {
-    makeMove(cells, m);
-    if (inCheck(cells, me)) danger += legalPlayMoves(cells, me).length ? 1 : 25;
-    unmakeMove(cells, m);
-  }
-  return danger;
-}
-
-/**
- * Setup-phase placement. Dice places at random; the others finish the setup
- * at random a few times after each candidate placement and keep the one that
- * leaves their king safest, preferring a corner for the king.
- */
-function placement(g: GameState, moves: Move[], rng: Rng, careful: boolean): Move {
-  if (!careful) return pick(moves, rng);
-  const me = g.turn;
-  const corners = [BACK_SPACES[me]![0]!, BACK_SPACES[me]![4]!];
-  let best: Move[] = [];
-  let bestScore = Infinity;
-  for (const m of moves) {
-    let danger = 0;
-    for (let i = 0; i < 6; i++) {
-      let h = applyMove(g, m);
-      while (h.phase === "setup") h = applyMove(h, pick(legalMoves(h), rng));
-      danger += openingDanger(h.cells, me);
-    }
-    if (typeOf(m.piece) === KING && !corners.includes(m.to)) danger += 3;
-    if (danger < bestScore) {
-      bestScore = danger;
-      best = [m];
-    } else if (danger === bestScore) best.push(m);
-  }
-  return pick(best, rng);
-}
-
 /** One move deep: take the most valuable thing, don't leave the moved piece hanging. */
 function magpie(g: GameState, moves: Move[], rng: Rng): Move {
   const cells = g.cells.slice();
@@ -277,7 +238,7 @@ function magpie(g: GameState, moves: Move[], rng: Rng): Move {
     if (isAttacked(cells, m.to, them)) score -= moved === KING ? 0 : VALUE[moved]!;
     if (inCheck(cells, them)) score += legalPlayMoves(cells, them).length ? 30 : MATE;
     unmakeMove(cells, m);
-    if (m.from && isAttacked(cells, m.from, them)) score += VALUE[typeOf(m.piece)]! / 2;
+    if (isAttacked(cells, m.from, them)) score += VALUE[typeOf(m.piece)]! / 2;
     score += rng() * 20;
     if (score > bestScore) {
       bestScore = score;
@@ -287,18 +248,26 @@ function magpie(g: GameState, moves: Move[], rng: Rng): Move {
   return pick(best, rng);
 }
 
-/** Pick `bot`'s move in `g`, which must not be over. */
-export function chooseMove(g: GameState, bot: BotId, rng: Rng, style?: Int16Array): BotResult {
+const engines = new Map<BotId, Engine>();
+
+/** Pick `bot`'s move in `g`, which must not be over. `seed` gives each game its own flavour. */
+export function chooseMove(g: GameState, bot: BotId, rng: Rng, seed = 0): BotResult {
   const moves = legalMoves(g);
   if (!moves.length) throw new Error("no legal moves");
   const info = botInfo(bot);
-  if (g.phase === "setup") return { move: placement(g, moves, rng, bot !== "random") };
   switch (bot) {
     case "random":
       return { move: pick(moves, rng) };
     case "magpie":
       return { move: magpie(g, moves, rng) };
-    default:
-      return search(g, info.timeMs ?? 300, rng, style);
+    case "classic":
+      return search(g, info.timeMs!, rng, makeStyle(makeRng(seed)));
+    default: {
+      let engine = engines.get(bot);
+      if (!engine) engines.set(bot, (engine = new Engine(undefined, { noise: 6 })));
+      engine.opts.seed = seed;
+      const r = engine.run(Position.fromGame(g), { timeMs: info.timeMs });
+      return { move: toRulesMove(g, r.move), score: g.turn === WHITE ? r.score : -r.score, depth: r.depth, nodes: r.nodes };
+    }
   }
 }

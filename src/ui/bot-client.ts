@@ -16,11 +16,11 @@ export class BotClient {
     };
   }
 
-  request(game: GameState, bot: BotId, seed: number, styleSeed: number): Promise<BotResponse> {
+  request(game: GameState, bot: BotId, seed: number, gameSeed: number): Promise<BotResponse> {
     const id = this.nextId++;
     return new Promise((resolve) => {
       this.waiting.set(id, resolve);
-      this.worker.postMessage({ id, game, bot, seed, styleSeed } satisfies BotRequest);
+      this.worker.postMessage({ id, game, bot, seed, gameSeed } satisfies BotRequest);
     });
   }
 }

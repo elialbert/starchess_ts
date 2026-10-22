@@ -1,5 +1,5 @@
 import { SPACE_COUNT, hexCenter, hexShade } from "../engine/board";
-import { BACK_SPACES, type GameState, KING, type Move, colorOf, inCheck, kingSpace, typeOf } from "../engine/rules";
+import { type GameState, KING, type Move, colorOf, inCheck, kingSpace, typeOf } from "../engine/rules";
 
 const SVG = "http://www.w3.org/2000/svg";
 const SIZE = 40;
@@ -88,25 +88,19 @@ export class BoardView {
     setTimeout(() => g.remove(), 400);
   }
 
-  /** Show `g`. With `last`, the moved piece slides over and a placed piece drops in. */
+  /** Show `g`. With `last`, the moved piece slides over; on an empty board the pieces drop in. */
   render(g: GameState, last?: Move) {
+    const fresh = this.pieces.size === 0;
     if (last) {
-      if (last.from) {
-        const mover = this.pieces.get(last.from);
-        const victim = this.pieces.get(last.to);
-        if (victim && victim !== mover) this.remove(victim);
-        if (mover) {
-          this.pieces.delete(last.from);
-          this.pieces.set(last.to, mover);
-          this.place(mover, last.to);
-          // the mover stays on top while it travels
-          this.pieceLayer.append(mover);
-        }
-      } else if (!this.pieces.has(last.to)) {
-        const fresh = this.makePiece(last.piece, last.to);
-        fresh.classList.add("dropping");
-        requestAnimationFrame(() => requestAnimationFrame(() => fresh.classList.remove("dropping")));
-        this.pieces.set(last.to, fresh);
+      const mover = this.pieces.get(last.from);
+      const victim = this.pieces.get(last.to);
+      if (victim && victim !== mover) this.remove(victim);
+      if (mover) {
+        this.pieces.delete(last.from);
+        this.pieces.set(last.to, mover);
+        this.place(mover, last.to);
+        // the mover stays on top while it travels
+        this.pieceLayer.append(mover);
       }
     }
     // then make sure every space matches the game, whatever happened before
@@ -119,15 +113,25 @@ export class BoardView {
       } else if (p && !shown) this.pieces.set(s, this.makePiece(p, s));
       else if (p && shown) this.setPiece(shown, p);
     }
+    if (fresh) {
+      // back rows first, then the pawns, white and black together
+      const dropping = [...this.pieces.values()];
+      dropping.forEach((piece) => {
+        piece.classList.add("dropping");
+        piece.style.transitionDelay = `${(typeOf(Number(piece.dataset.piece)) === 1 ? 300 : 0) + Math.random() * 200}ms`;
+      });
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => dropping.forEach((piece) => piece.classList.remove("dropping")))
+      );
+      setTimeout(() => dropping.forEach((piece) => (piece.style.transitionDelay = "")), 1200);
+    }
 
-    const checked = g.phase === "play" && inCheck(g.cells, g.turn) ? kingSpace(g.cells, g.turn) : 0;
-    const backs = g.phase === "setup" ? BACK_SPACES[g.turn]! : [];
+    const checked = inCheck(g.cells, g.turn) ? kingSpace(g.cells, g.turn) : 0;
     for (let s = 1; s <= SPACE_COUNT; s++) {
       const h = this.hexes[s]!;
       h.classList.toggle("last-from", !!last && last.from === s);
       h.classList.toggle("last-to", !!last && last.to === s);
       h.classList.toggle("check", s === checked);
-      h.classList.toggle("setup-target", backs.includes(s) && !g.cells[s]);
     }
     for (const [s, piece] of this.pieces) piece.classList.toggle("in-check", s === checked && typeOf(g.cells[s]!) === KING);
   }
