@@ -870,7 +870,6 @@ kbd {
 }
 /* the initial hangs in a gutter as wide as the piece column below, so every line starts clear of it */
 .lede {
-  max-width: calc(62ch + 58px);
   font-size: 18px;
   margin: 0 0 22px;
   padding-left: 58px;

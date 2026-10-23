@@ -275,6 +275,15 @@ async function runGame(gen: number) {
     if (!stepping) await sleep(pace - (performance.now() - started));
     if (gen !== generation) return;
     thinking = null;
+    // paused while it was thinking: hold the move until play or step
+    if (!stepping && !running) {
+      renderPlayers();
+      while (!running && !stepOnce) {
+        await new Promise<void>((r) => (wake = r));
+        if (gen !== generation) return;
+      }
+      stepOnce = false;
+    }
     if (res.score !== undefined) lastScore = { score: res.score, depth: res.depth, nodes: res.nodes };
     play(res.move, res.score);
   }

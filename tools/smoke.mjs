@@ -92,10 +92,9 @@ const fullMoves = Math.ceil((await sc(() => window.__sc.plies)) / 2);
 if ((await page.locator("#moves li").count()) < fullMoves) fail("the move list isn't filling in");
 
 // pause holds the game still; step plays exactly one move
-await page.click("#play");
-await page.waitForTimeout(1500);
-const held = await sc(() => window.__sc.plies);
-await page.waitForTimeout(1500);
+// count the moves in the same tick as the click: a move already chosen mustn't land after it
+const held = await sc(() => (document.querySelector("#play").click(), window.__sc.plies));
+await page.waitForTimeout(2500);
 if ((await sc(() => window.__sc.plies)) !== held) fail("the game kept going while paused");
 if (!(await sc(() => window.__sc.over))) {
   await page.click("#step");
