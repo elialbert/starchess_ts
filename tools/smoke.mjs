@@ -88,7 +88,8 @@ await page.waitForFunction(() => window.__sc.plies >= 18 || window.__sc.over, nu
 await checkBoard("mid-game");
 if (!(await sc(() => window.__sc.over)) && (await page.locator("#banner").isVisible())) fail("the game-over banner shows mid-game");
 await shot("playing");
-if ((await page.locator("#moves li").count()) < 5) fail("the move list isn't filling in");
+const fullMoves = Math.ceil((await sc(() => window.__sc.plies)) / 2);
+if ((await page.locator("#moves li").count()) < fullMoves) fail("the move list isn't filling in");
 
 // pause holds the game still; step plays exactly one move
 await page.click("#play");

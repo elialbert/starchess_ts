@@ -100,7 +100,7 @@ const playBtn = $<HTMLButtonElement>("play");
 const stepBtn = $<HTMLButtonElement>("step");
 const newBtn = $<HTMLButtonElement>("new");
 const numbersBox = $<HTMLInputElement>("numbers");
-const evalFill = $("eval-fill");
+const fortune = $("fortune") as unknown as SVGSVGElement;
 const evalText = $("eval-text");
 const evalDetail = $("eval-detail");
 const selects = [$<HTMLSelectElement>("bot-white"), $<HTMLSelectElement>("bot-black")];
@@ -108,7 +108,7 @@ const playerRows = [$("p-white"), $("p-black")];
 const capturedEls = [$("cap-white"), $("cap-black")];
 const youEls = playerRows.map((r) => r.querySelector<HTMLElement>(".you")!);
 const undoBtn = $<HTMLButtonElement>("undo");
-const tagline = $("tagline");
+const setupEl = $("setup");
 const modeBtns = [...document.querySelectorAll<HTMLButtonElement>("[data-mode]")];
 const sideBtns = [...document.querySelectorAll<HTMLButtonElement>("[data-side]")];
 const speedGroup = document.querySelector<HTMLElement>(".speed")!;
@@ -148,6 +148,8 @@ interface Ply {
   move: Move;
   label: string;
   after: GameState;
+  /** the searching bot's view after it chose this move, in centipawns for white */
+  score?: number;
 }
 
 const client = new BotClient();
@@ -278,13 +280,13 @@ async function runGame(gen: number) {
     if (gen !== generation) return;
     thinking = null;
     if (res.score !== undefined) lastScore = { score: res.score, depth: res.depth, nodes: res.nodes };
-    play(res.move);
+    play(res.move, res.score);
   }
 }
 
-function play(move: Move) {
+function play(move: Move, score?: number) {
   const after = applyMove(game, move);
-  plies.push({ move, label: moveLabel(move, after), after });
+  plies.push({ move, label: moveLabel(move, after), after, score });
   game = after;
   over = outcome(game, legalMoves(game));
   view.render(game, move);
@@ -300,16 +302,16 @@ function finish(res: Outcome) {
 }
 
 async function countdown(gen: number, res: Outcome) {
-  const capital = (s: string) => s[0]!.toUpperCase() + s.slice(1);
   banner.hidden = false;
+  const winner = res.winner === null ? null : playerFor(res.winner);
+  const who = winner === null ? "Draw" : winner === "human" ? "You win" : `${botInfo(winner).name} wins`;
+  const how = `${res.winner === null ? "" : `${COLOR_NAME[res.winner]}, `}by ${res.reason}`;
   if (mode === "play") {
-    const who = res.winner === null ? "Draw" : res.winner === settings.side ? "You win" : `${botInfo(settings.opponent).name} wins`;
-    banner.innerHTML = `<strong>${who}</strong><span>by ${res.reason}</span><small>New game for another, or undo to try again</small>`;
+    banner.innerHTML = `<strong>${who}</strong><span>${how}</span><small>New game for another, or undo to try again</small>`;
     return;
   }
-  const who = res.winner === null ? "Draw" : `${capital(COLOR_NAME[res.winner])} (${playerName(playerFor(res.winner))}) wins`;
   for (let left = 10; gen === generation; ) {
-    banner.innerHTML = `<strong>${who}</strong><span>by ${res.reason}</span><small>${
+    banner.innerHTML = `<strong>${who}</strong><span>${how}</span><small>${
       running ? `next game in ${left}s` : "paused: press play for the next game"
     }</small>`;
     await sleep(1000);
@@ -351,7 +353,70 @@ function renderStatus() {
   else statusEl.textContent = `${move}${botInfo(settings.opponent).name} is thinking.`;
 }
 
-function renderEval() {
+const fmtScore = (score: number) =>
+  Math.abs(score) > 99000 ? (score > 0 ? "White mates" : "Black mates") : `${score >= 0 ? "+" : "−"}${(Math.abs(score) / 100).toFixed(1)}`;
+
+/** Each position's score for white, from the start of the game: bots that don't search carry the last one on. */
+function scoreTrail(): number[] {
+  const trail = [0];
+  for (const p of plies) trail.push(p.score ?? trail.at(-1)!);
+  if (over) trail[trail.length - 1] = over.winner === null ? 0 : over.winner === WHITE ? 1e5 : -1e5;
+  return trail;
+}
+
+const FORTUNE_H = 64;
+const fortuneTip = document.createElement("div");
+fortuneTip.className = "tip";
+fortuneTip.hidden = true;
+fortune.parentElement!.append(fortuneTip);
+
+/**
+ * The fortune line sits between the two names and leans toward whoever is ahead:
+ * up favours the side named above it.
+ */
+function renderFortune() {
+  const trail = scoreTrail();
+  const w = fortune.clientWidth || 300;
+  const h = FORTUNE_H;
+  const span = Math.max(40, trail.length - 1);
+  const topIsWhite = mode === "play" && settings.side === BLACK;
+  const x = (i: number) => (i / span) * w;
+  const y = (score: number) => {
+    const lean = Math.abs(score) > 99000 ? Math.sign(score) : Math.tanh(score / 700);
+    return h / 2 - (topIsWhite ? lean : -lean) * (h / 2 - 3);
+  };
+  const pts = trail.map((sc, i) => `${x(i).toFixed(1)},${y(sc).toFixed(1)}`);
+  const last = trail.length - 1;
+  fortune.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  fortune.innerHTML = `
+    <defs><pattern id="fortune-ht" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(30)">
+      <circle class="area-dot" cx="2" cy="2" r=".9"/></pattern></defs>
+    <path class="area" d="M0,${h / 2} L${pts.join(" L")} L${x(last)},${h / 2} Z"/>
+    <line class="zero" x1="0" x2="${w}" y1="${h / 2}" y2="${h / 2}"/>
+    <polyline class="line" points="${pts.join(" ")}"/>
+    <circle class="now" r="4.5" cx="${x(last)}" cy="${y(trail[last]!)}"/>
+    <line class="cross" y1="0" y2="${h}" visibility="hidden"/>
+    <rect class="hit" x="0" y="0" width="${w}" height="${h}"/>`;
+
+  const cross = fortune.querySelector<SVGLineElement>(".cross")!;
+  const hit = fortune.querySelector<SVGRectElement>(".hit")!;
+  hit.addEventListener("pointermove", (e) => {
+    const box = fortune.getBoundingClientRect();
+    const i = Math.max(0, Math.min(last, Math.round(((e.clientX - box.left) / box.width) * span)));
+    cross.setAttribute("x1", String(x(i)));
+    cross.setAttribute("x2", String(x(i)));
+    cross.setAttribute("visibility", "visible");
+    const p = plies[i - 1];
+    const label = p ? `${Math.ceil(i / 2)}${i % 2 ? "." : "…"} ${p.label}` : "Start";
+    fortuneTip.textContent = `${label}   ${fmtScore(trail[i]!)}`;
+    fortuneTip.style.left = `${box.left - fortune.parentElement!.getBoundingClientRect().left + (x(i) / w) * box.width}px`;
+    fortuneTip.hidden = false;
+  });
+  hit.addEventListener("pointerleave", () => {
+    cross.setAttribute("visibility", "hidden");
+    fortuneTip.hidden = true;
+  });
+
   let score: number;
   let detail = "";
   if (lastScore) {
@@ -361,21 +426,22 @@ function renderEval() {
     score = evaluate(game.cells, WHITE);
     detail = "material & position";
   }
-  if (over) score = over.winner === null ? 0 : over.winner === WHITE ? 1e5 : -1e5;
-  const mate = Math.abs(score) > 99000;
-  const pct = mate ? (score > 0 ? 100 : 0) : 50 + 50 * Math.tanh(score / 700);
-  evalFill.style.width = `${pct}%`;
-  evalText.textContent = mate ? (score > 0 ? "White mates" : "Black mates") : `${score >= 0 ? "+" : "−"}${(Math.abs(score) / 100).toFixed(1)}`;
+  if (over) score = trail[last]!;
+  evalText.textContent = fmtScore(score);
   evalDetail.textContent = detail;
 }
+new ResizeObserver(() => renderFortune()).observe(fortune);
 
 function renderMoves() {
   movesEl.replaceChildren();
-  const head = document.createElement("li");
-  head.className = "setup";
-  head.textContent = `Setup ${setupName(setup)}, mirrored`;
-  head.title = "White's back row from left to right; black's is the mirror image";
-  movesEl.append(head);
+  setupEl.textContent = `Setup ${setupName(setup)}, mirrored`;
+  setupEl.title = "White's back row from left to right; black's is the mirror image";
+  if (!plies.length) {
+    const li = document.createElement("li");
+    li.className = "empty";
+    li.textContent = "No moves yet.";
+    movesEl.append(li);
+  }
   for (let i = 0; i < plies.length; i += 2) {
     const li = document.createElement("li");
     const num = document.createElement("span");
@@ -385,7 +451,7 @@ function renderMoves() {
     for (const p of plies.slice(i, i + 2)) {
       const s = document.createElement("span");
       s.textContent = p.label;
-      s.className = "ply " + COLOR_NAME[colorOf(p.move.piece)];
+      s.className = "ply " + COLOR_NAME[colorOf(p.move.piece)] + (p === plies.at(-1) ? " last" : "");
       li.append(s);
     }
     movesEl.append(li);
@@ -410,9 +476,15 @@ function renderResults() {
   for (const [id, name] of [["human", "You"], ...BOTS.map((b) => [b.id, b.name])] as [Player, string][]) {
     const t = tally.get(id);
     if (!t) continue;
-    const tr = document.createElement("tr");
-    tr.innerHTML = `<th>${name}</th><td>${t.w}</td><td>${t.d}</td><td>${t.l}</td>`;
-    body.append(tr);
+    // newest first; a bot playing itself shows both games
+    const form = results.flatMap((r) =>
+      ([WHITE, BLACK] as Color[]).filter((c) => (c === WHITE ? r.white : r.black) === id).map((c) => (r.winner === null ? "◐" : r.winner === c ? "●" : "○"))
+    );
+    const row = document.createElement("div");
+    row.className = "form-row";
+    row.innerHTML = `<b>${name}</b><span class="dots">${form.slice(0, 14).join("")}</span><span class="wdl">${t.w}–${t.d}–${t.l}</span>`;
+    row.title = `${t.w} won, ${t.d} drawn, ${t.l} lost`;
+    body.append(row);
   }
   $("results").hidden = !results.length;
 }
@@ -425,19 +497,18 @@ function renderControls() {
   const watching = mode === "watch";
   playBtn.hidden = stepBtn.hidden = speedGroup.hidden = !watching;
   undoBtn.hidden = sideGroup.hidden = watching;
-  playBtn.textContent = running ? "Pause" : "Play";
+  playBtn.querySelector("span")!.textContent = running ? "Pause" : "Play";
   playBtn.setAttribute("aria-pressed", String(!running));
   stepBtn.disabled = running || !!over;
   undoBtn.disabled = undoTo() < 0;
   for (const b of modeBtns) b.setAttribute("aria-pressed", String(b.dataset.mode === mode));
   for (const b of sideBtns) b.setAttribute("aria-pressed", String((b.dataset.side === "black" ? BLACK : WHITE) === settings.side));
-  tagline.textContent = watching ? "Chess on a six-pointed star. Two bots, live." : "Chess on a six-pointed star. Your move.";
 }
 
 function renderAll() {
   renderPlayers();
   renderStatus();
-  renderEval();
+  renderFortune();
   renderMoves();
   renderControls();
 }
@@ -470,7 +541,7 @@ function undo() {
 /** Turn the board round when you play black, with your row of the panel at the bottom too. */
 function flip(flipped: boolean) {
   view.setFlipped(flipped);
-  document.querySelector(".match")!.classList.toggle("flipped", flipped);
+  document.querySelector(".bout")!.classList.toggle("flipped", flipped);
 }
 
 function setMode(next: Mode) {

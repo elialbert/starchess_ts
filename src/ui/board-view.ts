@@ -3,8 +3,17 @@ import { type GameState, KING, type Move, colorOf, inCheck, kingSpace, typeOf } 
 
 const SVG = "http://www.w3.org/2000/svg";
 const SIZE = 40;
-/** Solid glyphs for both sides (filled differently); U+FE0E keeps them from turning into emoji. */
-const GLYPH = ["", "♟", "♞", "♝", "♜", "♛", "♚"].map((g) => g && g + "︎");
+/**
+ * As in a printed diagram: black pieces are solid glyphs, white ones outline glyphs over a
+ * solid paper-coloured cut-out. U+FE0E keeps them from turning into emoji.
+ */
+const SOLID = ["", "♟", "♞", "♝", "♜", "♛", "♚"].map((g) => g && g + "︎");
+const OUTLINE = ["", "♙", "♘", "♗", "♖", "♕", "♔"].map((g) => g && g + "︎");
+
+/** A halftone screen of dots, as a riso print shades things. */
+const screen = (id: string, cls: string, r: number, pitch = 6) =>
+  `<pattern id="${id}" width="${pitch}" height="${pitch}" patternUnits="userSpaceOnUse" patternTransform="rotate(30)">` +
+  `<circle class="${cls}" cx="${pitch / 2}" cy="${pitch / 2}" r="${r}"/></pattern>`;
 
 const el = <K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}) => {
   const e = document.createElementNS(SVG, tag);
@@ -23,6 +32,7 @@ export class BoardView {
   readonly svg: SVGSVGElement;
   private readonly hexes: SVGGElement[] = [];
   private readonly pieceLayer: SVGGElement;
+  private readonly arrowLayer: SVGGElement;
   private readonly flipper: SVGGElement;
   private readonly center: [number, number];
   private pieces = new Map<number, SVGGElement>();
@@ -39,9 +49,12 @@ export class BoardView {
     this.svg = el("svg", { viewBox: `${minX} ${minY} ${w} ${h}`, class: "board", role: "img", "aria-label": "Starchess board" });
 
     const defs = el("defs");
-    defs.innerHTML = `
-      <radialGradient id="check-glow"><stop offset="0" stop-color="#ff4d4d" stop-opacity=".9"/><stop offset="1" stop-color="#ff4d4d" stop-opacity="0"/></radialGradient>
-      <filter id="piece-shadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="2" stdDeviation="1.6" flood-color="#000" flood-opacity=".45"/></filter>`;
+    defs.innerHTML =
+      screen("ht-1", "ht", 1.15) +
+      screen("ht-2", "ht", 2) +
+      screen("ht-pink", "ht-pink", 2.1, 5) +
+      `<marker id="arrow-head" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto">
+        <path class="arrow-head" d="M0 0L10 5L0 10z"/></marker>`;
     this.svg.append(defs);
     this.center = hexCenter(19, SIZE);
     this.flipper = el("g");
@@ -63,17 +76,17 @@ export class BoardView {
       this.hexes[s] = g;
     }
     this.flipper.append(hexLayer);
+    this.arrowLayer = el("g", { class: "arrows" });
+    this.flipper.append(this.arrowLayer);
     this.pieceLayer = el("g", { class: "pieces" });
     this.flipper.append(this.pieceLayer);
     container.append(this.svg);
   }
 
   private makePiece(p: number, space: number): SVGGElement {
-    const g = el("g", { class: `piece ${colorOf(p) ? "black" : "white"}`, filter: "url(#piece-shadow)" });
-    const t = el("text", { x: 0, y: 0 });
-    t.textContent = GLYPH[typeOf(p)]!;
-    g.append(t);
-    g.dataset.piece = String(p);
+    const g = el("g", { class: `piece ${colorOf(p) ? "black" : "white"}` });
+    g.append(el("text", { class: "body", x: 0, y: 0 }), el("text", { class: "line", x: 0, y: 0 }));
+    this.drawGlyph(g, p);
     this.place(g, space);
     this.pieceLayer.append(g);
     return g;
@@ -89,7 +102,35 @@ export class BoardView {
     g.dataset.piece = String(p);
     g.classList.toggle("black", !!colorOf(p));
     g.classList.toggle("white", !colorOf(p));
-    g.querySelector("text")!.textContent = GLYPH[typeOf(p)]!;
+    this.drawGlyph(g, p);
+  }
+
+  private drawGlyph(g: SVGGElement, p: number) {
+    g.dataset.piece = String(p);
+    g.querySelector(".body")!.textContent = SOLID[typeOf(p)]!;
+    g.querySelector(".line")!.textContent = OUTLINE[typeOf(p)]!;
+  }
+
+  /** Ink the last move in as an arrow, stopping short of the pieces' centres. */
+  private drawArrow(last?: Move) {
+    this.arrowLayer.replaceChildren();
+    if (!last) return;
+    const [x1, y1] = hexCenter(last.from, SIZE);
+    const [x2, y2] = hexCenter(last.to, SIZE);
+    const len = Math.hypot(x2 - x1, y2 - y1);
+    const [ux, uy] = [(x2 - x1) / len, (y2 - y1) / len];
+    const start = SIZE * 0.42, end = SIZE * 0.55;
+    this.arrowLayer.append(
+      el("line", {
+        class: "arrow",
+        x1: x1 + ux * start,
+        y1: y1 + uy * start,
+        x2: x2 - ux * end,
+        y2: y2 - uy * end,
+        pathLength: 1,
+        "marker-end": "url(#arrow-head)"
+      })
+    );
   }
 
   private remove(g: SVGGElement) {
@@ -140,6 +181,7 @@ export class BoardView {
       setTimeout(() => dropping.forEach((piece) => (piece.style.transitionDelay = "")), 1200);
     }
 
+    this.drawArrow(last);
     const checked = inCheck(g.cells, g.turn) ? kingSpace(g.cells, g.turn) : 0;
     for (let s = 1; s <= SPACE_COUNT; s++) {
       const h = this.hexes[s]!;
@@ -177,5 +219,6 @@ export class BoardView {
   clear() {
     for (const p of this.pieces.values()) p.remove();
     this.pieces.clear();
+    this.arrowLayer.replaceChildren();
   }
 }

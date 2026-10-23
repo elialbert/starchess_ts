@@ -3,96 +3,111 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#101218" />
+    <meta name="theme-color" content="#fbfaf6" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#141318" media="(prefers-color-scheme: dark)" />
     <meta name="description" content="Starchess: chess on a six-pointed star. Watch two bots play it out, or play one yourself." />
     <title>Starchess</title>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Anybody:wdth,wght@50..150,400..900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Noto+Sans+Symbols+2&display=swap"
+    />
   </head>
   <body>
-    <header class="top">
-      <h1><span class="star" aria-hidden="true">✶</span> Starchess</h1>
-      <p id="tagline">Chess on a six-pointed star. Two bots, live.</p>
-      <div class="mode" role="group" aria-label="Mode">
-        <button data-mode="watch">Watch bots</button>
-        <button data-mode="play">Play a bot</button>
-      </div>
+    <header class="masthead">
+      <h1 data-ink="Starchess">Starchess</h1>
+      <p class="kicker">Chess on a six-pointed star <i>·</i> 37 spaces <i>·</i> 92 openings <i>·</i> no castling</p>
+      <nav class="mode" aria-label="Mode">
+        <button data-mode="watch"><b>Watch</b><small>two bots, live</small></button>
+        <button data-mode="play"><b>Play</b><small>you vs a bot</small></button>
+      </nav>
     </header>
 
     <main class="layout">
-      <section class="stage">
-        <div id="board-wrap"></div>
-        <div id="banner" class="banner" aria-live="polite" hidden></div>
-      </section>
+      <figure class="stage">
+        <div id="board-wrap">
+          <div id="banner" class="stamp" aria-live="polite" hidden></div>
+        </div>
+        <figcaption>
+          <span class="fig">Fig.</span>
+          <span id="status" aria-live="polite"></span>
+          <span id="setup" class="setup"></span>
+        </figcaption>
+      </figure>
 
       <aside class="panel">
-        <div class="card match">
+        <section class="bout" aria-label="Players">
           <div class="player" id="p-black">
-            <span class="swatch black" aria-hidden="true"></span>
+            <span class="side-tag">black</span>
             <label class="sr" for="bot-black">Black bot</label>
             <select id="bot-black"></select>
             <span class="you" hidden>You</span>
-            <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
             <span class="captured" id="cap-black" title="Pieces black has taken"></span>
           </div>
-          <div class="eval" title="Who's ahead, as the last searching bot saw it">
-            <div class="bar"><div class="fill" id="eval-fill"></div></div>
-            <div class="eval-meta"><strong id="eval-text">+0.0</strong><span id="eval-detail"></span></div>
+          <div class="fortune">
+            <span class="vs" aria-hidden="true">vs</span>
+            <svg id="fortune" role="img" aria-label="Who's ahead, move by move"></svg>
+            <div class="fortune-meta"><strong id="eval-text">+0.0</strong><span id="eval-detail"></span></div>
           </div>
           <div class="player" id="p-white">
-            <span class="swatch white" aria-hidden="true"></span>
+            <span class="side-tag">white</span>
             <label class="sr" for="bot-white">White bot</label>
             <select id="bot-white"></select>
             <span class="you" hidden>You</span>
-            <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
             <span class="captured" id="cap-white" title="Pieces white has taken"></span>
           </div>
-        </div>
+        </section>
 
-        <p id="status" class="status" aria-live="polite"></p>
-
-        <div class="controls">
-          <button id="play" class="primary">Pause</button>
-          <button id="step" title="One move (→)">Step</button>
-          <button id="new" title="New game (n)">New game</button>
-          <button id="undo" title="Take back your last move (u)" hidden>Undo</button>
-          <div class="seg side" role="group" aria-label="Play as" hidden>
-            <button data-side="white">Play white</button>
-            <button data-side="black">Play black</button>
+        <section class="controls" aria-label="Controls">
+          <button id="play" class="primary"><span>Pause</span><kbd>space</kbd></button>
+          <button id="step"><span>Step</span><kbd>→</kbd></button>
+          <button id="new"><span>New game</span><kbd>n</kbd></button>
+          <button id="undo" hidden><span>Undo</span><kbd>u</kbd></button>
+          <div class="opts speed" role="group" aria-label="Speed">
+            <span>pace</span>
+            <button data-speed="slow">slow</button>
+            <button data-speed="normal">normal</button>
+            <button data-speed="fast">fast</button>
           </div>
-          <div class="seg speed" role="group" aria-label="Speed">
-            <button data-speed="slow">Slow</button>
-            <button data-speed="normal">Normal</button>
-            <button data-speed="fast">Fast</button>
+          <div class="opts side" role="group" aria-label="Play as" hidden>
+            <span>you play</span>
+            <button data-side="white">white</button>
+            <button data-side="black">black</button>
           </div>
-          <label class="toggle"><input type="checkbox" id="numbers" /> Space numbers</label>
-        </div>
+          <label class="toggle"><input type="checkbox" id="numbers" /> space numbers</label>
+        </section>
 
-        <ol id="moves" class="card moves" aria-label="Moves"></ol>
+        <section class="score">
+          <h2>The score</h2>
+          <ol id="moves" aria-label="Moves"></ol>
+        </section>
 
-        <div id="results" class="card results" hidden>
-          <h2>Results in this browser</h2>
-          <table>
-            <thead>
-              <tr><th></th><th>W</th><th>D</th><th>L</th></tr>
-            </thead>
-            <tbody id="tally"></tbody>
-          </table>
-        </div>
-
-        <details class="card rules">
-          <summary>How starchess works</summary>
-          <ul>
-            <li><b>Setup.</b> Each side has five pawns and a king, queen, rook, bishop and knight on its back row. Every game draws a random arrangement for white, and black gets its mirror image. Arrangements that lose by force are left out.</li>
-            <li><b>Pawns</b> step forward, can step twice from the start, take one space diagonally forward, and promote on the enemy's back row.</li>
-            <li><b>Bishops</b> slide along the four diagonals; <b>queens</b> along all six lines.</li>
-            <li><b>Rooks</b> slide straight up and down, and can also take one quiet step diagonally.</li>
-            <li><b>Knights</b> jump two along a line and one to the side, or one along and two to the side.</li>
-            <li><b>Kings</b> step one space. Checkmate wins; stalemate, threefold repetition and 50 quiet moves are draws.</li>
-          </ul>
-          <p class="fine">To move, click a piece and then where it should go. Keys: space pauses, → steps, n starts a new game, u takes back a move.</p>
-        </details>
+        <section id="results" class="record" hidden>
+          <h2>Form, in this browser</h2>
+          <p class="legend"><span>●</span> won <span>◐</span> drew <span>○</span> lost, newest first</p>
+          <div id="tally"></div>
+        </section>
       </aside>
     </main>
+
+    <footer class="backpage">
+      <h2 data-ink="How it moves">How it moves</h2>
+      <p class="lede">
+        Each side has five pawns and a king, queen, rook, bishop and knight on its back row. Every game draws a random arrangement for white,
+        and black gets its mirror image. Arrangements that lose by force are left out.
+      </p>
+      <dl class="moves-guide">
+        <div><dt>♟</dt><dd><b>Pawns</b> step forward, can step twice from the start, take one space diagonally forward, and promote on the enemy's back row.</dd></div>
+        <div><dt>♝</dt><dd><b>Bishops</b> slide along the four diagonals.</dd></div>
+        <div><dt>♛</dt><dd><b>Queens</b> slide along all six lines.</dd></div>
+        <div><dt>♜</dt><dd><b>Rooks</b> slide straight up and down, and can also take one quiet step diagonally.</dd></div>
+        <div><dt>♞</dt><dd><b>Knights</b> jump two along a line and one to the side, or one along and two to the side.</dd></div>
+        <div><dt>♚</dt><dd><b>Kings</b> step one space. Checkmate wins; stalemate, threefold repetition and 50 quiet moves are draws.</dd></div>
+      </dl>
+      <p class="fine">To move, click a piece and then where it should go. Esc puts it back down.</p>
+    </footer>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
