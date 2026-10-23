@@ -22,6 +22,14 @@ paired games from the 92 playable setups, and SPRT (5%/5%):
 | Texel round 3 (gen2+gen3) | +35 | current `weights.json` = `tuning/texel3.json` |
 | SPSA search margins | +15 | futility 110, rfp 85, delta 193, lmrBase 0.6, lmrDiv 2.3 |
 | Speed: eval cache, faster `evaluate`, integer evals | +99 at 50 ms | vs `impl=engine0`; +11 [-2, +23] at 20k nodes (rounding only) |
+| Texel round 4 (gen3+gen4) | +17 | current `weights.json` = `tuning/texel4b.json` |
+
+Measured and **not adopted**: four new eval terms (rook/queen on a semi-open
+or open column, piece defended by a pawn, piece within 2 of the enemy king),
+fitted in the same Texel round 4: held-out loss 0.062199 vs 0.062295 without
+them, but only +10 [-0, +20] in 1000 pairs (no SPRT verdict), and they cost
+eval time. Search SPSA round 2 (`lmp=true,lmpBase=14,aspiration=36`; null-move
+and LMR parameters didn't move): +1 [-8, +11] in 1000 pairs.
 
 Measured and left **off** (the options still exist): `seeOrder` (neutral),
 `improving` (-23), `lmp` (-61 with lmpBase 3: far too tight for this board;
@@ -33,10 +41,8 @@ Gauntlet (`npm run gauntlet -- --pairs 150`) with the current engine at 20k
 nodes: Magpie 300-0, Classic (50 ms) +545, the round-1 engine
 (`tools/refs/weights-r1.json`, `seePrune=false`) +113, itself at 5k nodes +234.
 
-Bench signature (`npm run bench -- 9`): **547,298 nodes** (612,885 before
-evals were rounded to integers). The speed work made it ~1.4x faster per node
-than `engine0` (measured A/B in one process on a loaded box; re-measure
-absolute nodes/s when idle, it was ~276k before). Profile (`npm run profile`):
+Bench signature (`npm run bench -- 9`): **592,704 nodes**, about 347k
+nodes/s on the idle dev box (276k before the speed work). Profile (`npm run profile`):
 `evaluate` + `add` are still ~54%, move generation ~10%, `attacked` ~7%.
 
 ## How the pieces fit
@@ -102,9 +108,10 @@ absolute nodes/s when idle, it was ~276k before). Profile (`npm run profile`):
 ### Local files (gitignored)
 
 - `data/`: `gen1.txt` (30k games with round-0 weights, before the limping
-  rule), `gen2.txt` (texel1 weights), `gen3.txt` (texel2 weights, with SEE).
+  rule), `gen2.txt` (texel1 weights), `gen3.txt` (texel2 weights, with SEE),
+`gen4.txt` (texel3 weights).
   About 2M positions each, 256 MB in all. Plus the `.log` files of every run.
-- `tuning/`: `texel1..3.json` and the SPSA log. `tools/refs/weights-r1.json`
+- `tuning/`: `texel1..4b.json` and the SPSA logs. `tools/refs/weights-r1.json`
   is committed as a fixed gauntlet reference.
 
 ## Working conventions and gotchas
@@ -143,9 +150,11 @@ absolute nodes/s when idle, it was ~276k before). Profile (`npm run profile`):
 
 ## Next: the three agreed tasks
 
-Status (2026-10-22): gen4 selfplay (`data/gen4.txt`, 2.14M positions, current
-weights) is done; the speed items "eval cache" and "cut overhead in
-`evaluate`" below are done.
+Status (2026-10-23): round 4 is done (gen4 = 2.14M positions with texel3
+weights; texel4b adopted). The speed items "eval cache" and "cut overhead in
+`evaluate`" are done. Search SPSA round 2 was neutral. Plain rounds are
+flattening (+107, +35, +17): for round 5, try selfplay at 20k nodes for better
+labels rather than more 5k-node games.
 
 ### 1. Another self-play -> Texel round
 
@@ -172,7 +181,7 @@ plain round:
 ### 2. Engine speed
 
 The eval is ~2/3 of the time. Pure speed-ups must keep the bench node count
-(612,885 at depth 9; it changes whenever the weights or search change, so
+(592,704 at depth 9; it changes whenever the weights or search change, so
 re-record the baseline first). Ideas, roughly in order of payoff:
 - An eval cache: a small hash table keyed by `pos.lo`/`pos.hi` storing the
   static eval. Quiescence revisits a lot of positions.
