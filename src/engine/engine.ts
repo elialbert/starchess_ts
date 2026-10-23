@@ -442,7 +442,7 @@ export const DEFAULT_OPTIONS: SearchOptions = {
   rfpMargin: 90,
   deltaMargin: 200,
   checkExt: true,
-  seePrune: false,
+  seePrune: true,
   seeOrder: false,
   aspiration: 40,
   contempt: 0,

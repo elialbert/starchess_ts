@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { makeRng } from "../src/engine/bots";
 import { Engine, MATE, Position, moveFrom, moveTo, movePromo, toRulesMove } from "../src/engine/engine";
-import { NPARAMS, baseWeights, evaluate } from "../src/engine/eval";
+import { NPARAMS, PARAM_NAMES, baseWeights, evaluate } from "../src/engine/eval";
 import { type GameState, applyMove, legalMoves, newGame, outcome, position } from "../src/engine/rules";
 
 const key = (from: number, to: number, promo: number) => `${from}-${to}=${promo}`;
@@ -167,5 +167,26 @@ describe("limping pawns in the engine", () => {
     fresh.make(12 | (18 << 6));
     fresh.make(34 | (33 << 6));
     expect(e.rootMoves(fresh).filter((m) => moveFrom(m) === 18).map(moveTo)).toEqual([19]);
+  });
+});
+
+describe("pawn structure features", () => {
+  it("counts passed, doubled and blocked pawns", () => {
+    const w = new Float64Array(NPARAMS);
+    const count = (pieces: Record<number, string>, name: string) => {
+      const pos = Position.fromGame(position(pieces));
+      const trace = new Float64Array(NPARAMS);
+      evaluate(pos.cells, pos.side, w, trace);
+      const i = PARAM_NAMES.indexOf(name);
+      return Math.round((trace[i]! + trace[i + PARAM_NAMES.length / 2]!) * 1000) / 1000;
+    };
+    // a lone white pawn on 18 is passed; with a black pawn straight ahead on 20 it isn't
+    const passed18 = (pieces: Record<number, string>) =>
+      [0, 1, 2, 3, 4, 5, 6].reduce((n, i) => n + count(pieces, `passed[${i}]`), 0);
+    expect(passed18({ 4: "wK", 34: "bK", 18: "wP" })).toBe(1);
+    expect(passed18({ 4: "wK", 34: "bK", 18: "wP", 20: "bP" })).toBe(0);
+    // 18 and 19 are in the same column
+    expect(count({ 4: "wK", 34: "bK", 18: "wP", 19: "wP" }, "doubled")).toBe(1);
+    expect(count({ 4: "wK", 34: "bK", 18: "wP", 19: "bN" }, "blocked")).toBe(1);
   });
 });

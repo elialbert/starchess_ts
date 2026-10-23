@@ -1,4 +1,4 @@
-import { MIRROR_LR, MIRROR_V, NEIGHBORS, SPACE_COUNT, hexCenter } from "./board";
+import { AXIAL, MIRROR_LR, MIRROR_V, NEIGHBORS, SPACE_COUNT, hexCenter } from "./board";
 import { KNIGHT_TARGETS } from "./rules";
 
 /**
@@ -31,6 +31,31 @@ export const NORB = (() => {
 /** ORB[color][space]: the table entry for a piece of `color` on `space`, seen from its own side. */
 const ORB = [Int8Array.from(ORBIT), Int8Array.from({ length: NSQ }, (_, s) => (s ? ORBIT[MIRROR_V[s]!]! : 0))];
 
+/** AHEAD[color][space]: spaces in front of a pawn there, in its own and the neighbouring columns */
+const AHEAD = [0, 1].map((c) =>
+  Array.from({ length: NSQ }, (_, s) => {
+    if (!s) return new Int8Array(0);
+    const [x, y] = centers[s]!;
+    const out: number[] = [];
+    for (let t = 1; t < NSQ; t++) {
+      const [tx, ty] = centers[t]!;
+      const ahead = c === 0 ? ty! < y! - 1e-6 : ty! > y! + 1e-6;
+      if (ahead && Math.abs(tx! - x!) < 1.6) out.push(t);
+    }
+    return Int8Array.from(out);
+  })
+);
+/** pawn steps from each space to the far edge, per colour */
+const TO_EDGE = [0, 3].map((dir) =>
+  Int8Array.from({ length: NSQ }, (_, s) => {
+    let n = 0;
+    for (let t = s ? NEIGHBORS[s]![dir]! : 0; t; t = NEIGHBORS[t]![dir]!) n++;
+    return n;
+  })
+);
+/** column of each space */
+const COLUMN = Int8Array.from({ length: NSQ }, (_, s) => (s ? AXIAL[s]![0]! : 0));
+
 // ---- parameter layout ----
 
 const FEATURES: string[] = [];
@@ -57,6 +82,12 @@ export const I_PTHREAT = block("pthreat", 7);
 export const I_LTHREAT = block("lthreat", 7);
 /** pawn defended by a pawn */
 export const I_PDEF = block("pdef", 1);
+/** passed pawn (no enemy pawn ahead in its own or a neighbouring column), by steps left to promotion */
+export const I_PASSED = block("passed", 7);
+/** pawn with another of its own pawns in the same column */
+export const I_DOUBLED = block("doubled", 1);
+/** pawn whose forward space is occupied */
+export const I_BLOCKED = block("blocked", 1);
 /** side to move */
 export const I_TEMPO = block("tempo", 1);
 /** number of features; weight i is feature i's middlegame weight, NF + i its endgame weight */
@@ -136,6 +167,7 @@ const att = [new Int8Array(NSQ), new Int8Array(NSQ)];
 const patt = [new Uint8Array(NSQ), new Uint8Array(NSQ)];
 /** lowest-valued attacker rank on each space, per side */
 const low = [new Uint8Array(NSQ), new Uint8Array(NSQ)];
+const pawnCols = [new Int8Array(9), new Int8Array(9)];
 
 /**
  * Score of `cells` for the side to move, in centipawns. With `trace`, adds
@@ -224,7 +256,25 @@ export function evaluate(cells: Int8Array, side: number, W: ArrayLike<number>, t
     if (att[o]![s] && !att[c]![s]) add(I_HANG + t, sign);
     if (t !== 1 && patt[o]![s]) add(I_PTHREAT + t, sign);
     else if (low[o]![s]! < RANK[t]!) add(I_LTHREAT + t, sign);
-    if (t === 1 && patt[c]![s]) add(I_PDEF, sign);
+    if (t === 1) {
+      if (patt[c]![s]) add(I_PDEF, sign);
+      const enemyPawn = 1 | (o << 3);
+      let passed = true;
+      for (const a of AHEAD[c]![s]!) {
+        if (cells[a] === enemyPawn) {
+          passed = false;
+          break;
+        }
+      }
+      if (passed) add(I_PASSED + Math.min(TO_EDGE[c]![s]!, 6), sign);
+      const fwd = NB[s * 6 + (c ? 3 : 0)]!;
+      if (fwd && cells[fwd]) add(I_BLOCKED, sign);
+      pawnCols[c]![COLUMN[s]!]!++;
+    }
+  }
+  for (let c = 0; c < 2; c++) {
+    for (let col = 0; col < 9; col++) if (pawnCols[c]![col]! > 1) add(I_DOUBLED, (c ? -1 : 1) * (pawnCols[c]![col]! - 1));
+    pawnCols[c]!.fill(0);
   }
 
   for (let c = 0; c < 2; c++) {
