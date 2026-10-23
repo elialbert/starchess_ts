@@ -15,7 +15,8 @@
     "selfplay": "vite-node tools/selfplay.ts",
     "texel": "vite-node tools/texel.ts",
     "spsa": "vite-node tools/spsa.ts",
-    "bench": "vite-node tools/bench.ts"
+    "bench": "vite-node tools/bench.ts",
+    "gauntlet": "vite-node tools/gauntlet.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

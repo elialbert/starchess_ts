@@ -420,6 +420,13 @@ export interface SearchOptions {
   seePrune: boolean;
   /** order captures by SEE rather than "defended or not" */
   seeOrder: boolean;
+  /** prune less when the side to move's eval is rising */
+  improving: boolean;
+  /** late move pruning of quiet moves at depth <= 3 */
+  lmp: boolean;
+  lmpBase: number;
+  /** internal iterative reduction */
+  iir: boolean;
   aspiration: number;
   /** draw score for the side to move (negative: avoid draws) */
   contempt: number;
@@ -444,6 +451,10 @@ export const DEFAULT_OPTIONS: SearchOptions = {
   checkExt: true,
   seePrune: true,
   seeOrder: false,
+  improving: false,
+  lmp: false,
+  lmpBase: 3,
+  iir: false,
   aspiration: 40,
   contempt: 0,
   noise: 0,
@@ -490,6 +501,7 @@ export class Engine {
   private deadline = Infinity;
   private pvTable = new Int32Array(MAX_PLY * MAX_PLY);
   private pvLen = new Int32Array(MAX_PLY);
+  private evalStack = new Int32Array(MAX_PLY);
 
   constructor(weights: Weights = DEFAULT_WEIGHTS, opts: Partial<SearchOptions> = {}) {
     this.weights = weights;
@@ -646,9 +658,12 @@ export class Engine {
     }
 
     const staticEval = inCheck ? -INF : this.eval();
+    this.evalStack[ply] = staticEval;
+    // is our position getting better than it was a move ago? then prune less
+    const improving = opts.improving && !inCheck && ply >= 2 && staticEval > this.evalStack[ply - 2]!;
     if (!pvNode && !inCheck) {
       // reverse futility: far enough above beta that a shallow search won't come back down
-      if (depth <= 3 && staticEval - opts.rfpMargin * depth >= beta && Math.abs(beta) < MATE_BOUND) return staticEval;
+      if (depth <= 3 && staticEval - opts.rfpMargin * (depth - (improving ? 1 : 0)) >= beta && Math.abs(beta) < MATE_BOUND) return staticEval;
       // null move
       if (opts.nullMove && allowNull && depth >= 3 && staticEval >= beta && pos.hasPieces(pos.side)) {
         const r = opts.nullBase + Math.floor(depth / opts.nullDiv);
@@ -659,10 +674,15 @@ export class Engine {
       }
     }
 
+    // internal iterative reduction: with no hash move to try first, search a little shallower
+    if (opts.iir && depth >= 4 && !ttMove) depth--;
+
     const start = ply * MAX_MOVES;
     const end = pos.gen(this.moves, start, false);
     this.score(start, end, ply, ttMove);
     const futile = opts.futility && !pvNode && !inCheck && depth <= 2 && staticEval + opts.futilityMargin * depth <= alpha;
+    // late move pruning: near the leaves, quiet moves this far down the list rarely matter
+    const lmpLimit = opts.lmp && !pvNode && !inCheck && depth <= 3 ? (opts.lmpBase + depth * depth) / (improving ? 1 : 2) : Infinity;
     let best = -INF, bestMove = 0, legal = 0;
     const origAlpha = alpha;
     for (let i = start; i < end; i++) {
@@ -676,7 +696,7 @@ export class Engine {
       }
       legal++;
       const givesCheck = pos.inCheck();
-      if (futile && isQuiet && legal > 1 && !givesCheck) {
+      if (isQuiet && legal > 1 && !givesCheck && (futile || legal > lmpLimit) && best > -MATE_BOUND) {
         pos.unmake(m);
         continue;
       }
