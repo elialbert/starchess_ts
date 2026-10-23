@@ -102,6 +102,7 @@ const selects = [$<HTMLSelectElement>("bot-white"), $<HTMLSelectElement>("bot-bl
 const playerRows = [$("p-white"), $("p-black")];
 const capturedEls = [$("cap-white"), $("cap-black")];
 const youEls = playerRows.map((r) => r.querySelector<HTMLElement>(".you")!);
+const nameEls = playerRows.map((r) => r.querySelector<HTMLElement>(".name")!);
 const undoBtn = $<HTMLButtonElement>("undo");
 const setupEl = $("setup");
 const modeBtns = [...document.querySelectorAll<HTMLButtonElement>("[data-mode]")];
@@ -321,8 +322,9 @@ function renderPlayers() {
     row.classList.toggle("thinking", thinking === c);
     const player = playerFor(c);
     youEls[c]!.hidden = player !== "human";
-    selects[c]!.hidden = player === "human";
+    selects[c]!.hidden = nameEls[c]!.hidden = player === "human";
     if (player !== "human") {
+      nameEls[c]!.textContent = botInfo(player).name;
       selects[c]!.value = player;
       selects[c]!.title = botInfo(player).blurb;
     }

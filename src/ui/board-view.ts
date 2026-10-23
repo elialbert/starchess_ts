@@ -3,13 +3,30 @@ import { type GameState, KING, type Move, colorOf, inCheck, kingSpace, typeOf } 
 
 const SVG = "http://www.w3.org/2000/svg";
 const SIZE = 40;
-const GLYPH_DROP = 7;
 /**
  * As in a printed diagram: black pieces are solid glyphs, white ones outline glyphs over a
  * solid paper-coloured cut-out. U+FE0E keeps them from turning into emoji.
  */
 const SOLID = ["", "♟", "♞", "♝", "♜", "♛", "♚"].map((g) => g && g + "︎");
 const OUTLINE = ["", "♙", "♘", "♗", "♖", "♕", "♔"].map((g) => g && g + "︎");
+/** a piece glyph's font size, as style.css sets it */
+const GLYPH_PX = 46;
+
+/**
+ * How far below the hex centre each glyph's baseline goes, so that its ink rather than its
+ * em box sits in the middle. Symbol fonts differ by platform, so this is measured, not set.
+ */
+const drops = new Map<string, number>();
+function measureDrops(family: string) {
+  const ctx = document.createElement("canvas").getContext("2d");
+  if (!ctx) return;
+  ctx.font = `${GLYPH_PX}px ${family}`;
+  for (const g of [...SOLID, ...OUTLINE]) {
+    if (!g) continue;
+    const m = ctx.measureText(g);
+    if (m.actualBoundingBoxAscent !== undefined) drops.set(g, (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2);
+  }
+}
 
 /** A halftone screen of dots, as a riso print shades things. */
 const screen = (id: string, cls: string, r: number, pitch = 6) =>
@@ -82,12 +99,19 @@ export class BoardView {
     this.pieceLayer = el("g", { class: "pieces" });
     this.flipper.append(this.pieceLayer);
     container.append(this.svg);
+
+    // measure with whatever font is there now, then again once the glyph font has loaded
+    const family = getComputedStyle(container).getPropertyValue("--glyphs").trim();
+    measureDrops(family);
+    void document.fonts?.load(`${GLYPH_PX}px ${family}`, SOLID.join("") + OUTLINE.join("")).then(() => {
+      measureDrops(family);
+      for (const g of this.pieces.values()) this.drawGlyph(g, Number(g.dataset.piece));
+    });
   }
 
   private makePiece(p: number, space: number): SVGGElement {
     const g = el("g", { class: `piece ${colorOf(p) ? "black" : "white"}` });
-    // the chess glyphs ride high in their em box: drop them to the middle of the hex
-    g.append(el("text", { class: "body", x: 0, y: GLYPH_DROP }), el("text", { class: "line", x: 0, y: GLYPH_DROP }));
+    g.append(el("text", { class: "body", x: 0 }), el("text", { class: "line", x: 0 }));
     this.drawGlyph(g, p);
     this.place(g, space);
     this.pieceLayer.append(g);
@@ -109,8 +133,15 @@ export class BoardView {
 
   private drawGlyph(g: SVGGElement, p: number) {
     g.dataset.piece = String(p);
-    g.querySelector(".body")!.textContent = SOLID[typeOf(p)]!;
-    g.querySelector(".line")!.textContent = OUTLINE[typeOf(p)]!;
+    const body = g.querySelector(".body")!;
+    const line = g.querySelector(".line")!;
+    body.textContent = SOLID[typeOf(p)]!;
+    line.textContent = OUTLINE[typeOf(p)]!;
+    // centre the glyph you see: black shows the solid one, white the outline over it
+    const shown = (colorOf(p) ? body : line).textContent!;
+    const y = String(drops.get(shown) ?? GLYPH_PX * 0.35);
+    body.setAttribute("y", y);
+    line.setAttribute("y", y);
   }
 
   /** Ink the last move in as an arrow, stopping short of the pieces' centres. */

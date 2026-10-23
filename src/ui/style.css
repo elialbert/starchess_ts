@@ -333,7 +333,6 @@ select {
   font-size: 46px;
   font-family: var(--glyphs);
   text-anchor: middle;
-  dominant-baseline: central;
   stroke-linejoin: round;
   paint-order: stroke;
   transition: transform 0.35s;
@@ -507,6 +506,8 @@ figcaption {
   position: relative;
   isolation: isolate;
   display: grid;
+  grid-template-columns: max-content;
+  max-width: 100%;
   justify-items: start;
   row-gap: 4px;
 }
@@ -581,8 +582,10 @@ figcaption {
     transform: translateY(-3px);
   }
 }
-.player select,
+.player .name,
 .player .you {
+  grid-row: 2;
+  grid-column: 1;
   justify-self: start;
   max-width: 100%;
   font: 850 36px/1 var(--display);
@@ -591,26 +594,32 @@ figcaption {
   color: var(--ink);
   padding: 0 0 2px;
 }
-.player select {
-  field-sizing: content;
-  appearance: none;
-  border: 0;
-  border-radius: 0;
-  background-color: transparent;
+.player .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='10'%3E%3Cpath d='M1 1h12L7 9z' fill='%23ff48b0'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 2px center;
   padding-right: 26px;
+}
+/* the real menu lies unseen over the name, at a normal size, so its list opens at a normal size too */
+.player select {
+  grid-row: 2;
+  grid-column: 1;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  font: 16px var(--text);
   cursor: pointer;
 }
-.player select option {
-  font: 16px var(--text);
-  text-transform: none;
-  background: var(--paper);
-  color: var(--ink);
+.player:has(select:focus-visible) .name {
+  outline: 3px solid var(--pink);
+  outline-offset: 2px;
 }
 /* whose turn: a stroke of highlighter */
-.player.to-move select,
+.player.to-move .name,
 .player.to-move .you {
   box-shadow: inset 0 -0.34em 0 var(--highlight);
 }
@@ -859,17 +868,19 @@ kbd {
   font-stretch: 140%;
   text-transform: uppercase;
 }
+/* the initial hangs in a gutter as wide as the piece column below, so every line starts clear of it */
 .lede {
-  max-width: 62ch;
+  max-width: calc(62ch + 58px);
   font-size: 18px;
   margin: 0 0 22px;
+  padding-left: 58px;
 }
 .lede::first-letter {
   float: left;
   font: 900 64px/0.8 var(--display);
-  font-stretch: 130%;
+  font-stretch: 100%;
   color: var(--pink);
-  margin: 4px 8px 0 0;
+  margin: 4px 0 0 -58px;
 }
 .moves-guide {
   display: grid;
