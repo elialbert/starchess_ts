@@ -16,7 +16,8 @@
     "texel": "vite-node tools/texel.ts",
     "spsa": "vite-node tools/spsa.ts",
     "bench": "vite-node tools/bench.ts",
-    "gauntlet": "vite-node tools/gauntlet.ts"
+    "gauntlet": "vite-node tools/gauntlet.ts",
+    "profile": "node tools/profile.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

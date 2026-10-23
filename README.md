@@ -64,6 +64,9 @@ threatened pieces, pawn chains, tempo. The weights in
 
 ## Making the AI stronger
 
+`docs/AI.md` has the details: current strength, results so far, how the
+harness works, and what to try next.
+
 All the tools run games in parallel on worker threads, so a 600-game match
 at 20k nodes a move takes about a minute on 24 cores.
 
@@ -82,6 +85,8 @@ npm run texel -- --data data/gen.txt --out tuning/new.json
 npm run spsa -- --params futilityMargin:120:20,lmrDiv:2.5:0.3,w.val[2]:450:25 --iters 200
 
 npm run bench      # fixed-depth node count (a pure speed-up mustn't change it) and nodes/s
+npm run profile    # CPU profile of the bench: where the time goes
+npm run gauntlet   # the engine against fixed references
 npm run setups     # re-score the 120 setups after the engine changes
 ```
 
