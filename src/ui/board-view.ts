@@ -3,6 +3,7 @@ import { type GameState, KING, type Move, colorOf, inCheck, kingSpace, typeOf } 
 
 const SVG = "http://www.w3.org/2000/svg";
 const SIZE = 40;
+const GLYPH_DROP = 7;
 /**
  * As in a printed diagram: black pieces are solid glyphs, white ones outline glyphs over a
  * solid paper-coloured cut-out. U+FE0E keeps them from turning into emoji.
@@ -85,7 +86,8 @@ export class BoardView {
 
   private makePiece(p: number, space: number): SVGGElement {
     const g = el("g", { class: `piece ${colorOf(p) ? "black" : "white"}` });
-    g.append(el("text", { class: "body", x: 0, y: 0 }), el("text", { class: "line", x: 0, y: 0 }));
+    // the chess glyphs ride high in their em box: drop them to the middle of the hex
+    g.append(el("text", { class: "body", x: 0, y: GLYPH_DROP }), el("text", { class: "line", x: 0, y: GLYPH_DROP }));
     this.drawGlyph(g, p);
     this.place(g, space);
     this.pieceLayer.append(g);
@@ -135,7 +137,7 @@ export class BoardView {
 
   private remove(g: SVGGElement) {
     g.classList.add("gone");
-    setTimeout(() => g.remove(), 400);
+    setTimeout(() => g.remove(), 1000);
   }
 
   /**

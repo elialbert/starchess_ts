@@ -25,7 +25,7 @@ import "./ui/style.css";
 
 // ---- settings (remembered per browser; URL params win, for links and the smoke test) ----
 
-const SPEEDS = { slow: 3200, normal: 1600, fast: 800 } as const;
+const SPEEDS = { slow: 2700, normal: 1100, fast: 300 } as const;
 type Speed = keyof typeof SPEEDS;
 /** the shortest a bot takes to answer you, so its move doesn't land on top of yours */
 const REPLY_MS = 400;
