@@ -18,7 +18,6 @@
   <body>
     <header class="masthead">
       <h1 data-ink="Starchess">Starchess</h1>
-      <p class="kicker">Chess on a six-pointed star <i>·</i> 37 spaces <i>·</i> 92 openings <i>·</i> no castling</p>
       <nav class="mode" aria-label="Mode">
         <button data-mode="watch"><b>Watch</b><small>two bots, live</small></button>
         <button data-mode="play"><b>Play</b><small>you vs a bot</small></button>
@@ -40,7 +39,7 @@
       <aside class="panel">
         <section class="bout" aria-label="Players">
           <div class="player" id="p-black">
-            <span class="side-tag">black</span>
+            <span class="side-tag"><span class="chip">black</span><span class="think" aria-hidden="true"><i></i><i></i><i></i></span></span>
             <label class="sr" for="bot-black">Black bot</label>
             <select id="bot-black"></select>
             <span class="you" hidden>You</span>
@@ -52,7 +51,7 @@
             <div class="fortune-meta"><strong id="eval-text">+0.0</strong><span id="eval-detail"></span></div>
           </div>
           <div class="player" id="p-white">
-            <span class="side-tag">white</span>
+            <span class="side-tag"><span class="chip">white</span><span class="think" aria-hidden="true"><i></i><i></i><i></i></span></span>
             <label class="sr" for="bot-white">White bot</label>
             <select id="bot-white"></select>
             <span class="you" hidden>You</span>
@@ -83,30 +82,22 @@
           <h2>The score</h2>
           <ol id="moves" aria-label="Moves"></ol>
         </section>
-
-        <section id="results" class="record" hidden>
-          <h2>Form, in this browser</h2>
-          <p class="legend"><span>●</span> won <span>◐</span> drew <span>○</span> lost, newest first</p>
-          <div id="tally"></div>
-        </section>
       </aside>
     </main>
 
     <footer class="backpage">
-      <h2 data-ink="How it moves">How it moves</h2>
+      <h2 data-ink="Rules">Rules</h2>
       <p class="lede">
-        Each side has five pawns and a king, queen, rook, bishop and knight on its back row. Every game draws a random arrangement for white,
-        and black gets its mirror image. Arrangements that lose by force are left out.
+        As you can see, Starchess has a different layout. Also, each game starts with a randomly selected mirror back row.
       </p>
       <dl class="moves-guide">
         <div><dt>♟</dt><dd><b>Pawns</b> step forward, can step twice from the start, take one space diagonally forward, and promote on the enemy's back row.</dd></div>
         <div><dt>♝</dt><dd><b>Bishops</b> slide along the four diagonals.</dd></div>
         <div><dt>♛</dt><dd><b>Queens</b> slide along all six lines.</dd></div>
-        <div><dt>♜</dt><dd><b>Rooks</b> slide straight up and down, and can also take one quiet step diagonally.</dd></div>
+        <div><dt>♜</dt><dd><b>Rooks</b> slide straight up and down. They can also step one space diagonally, but can't capture that way.</dd></div>
         <div><dt>♞</dt><dd><b>Knights</b> jump two along a line and one to the side, or one along and two to the side.</dd></div>
         <div><dt>♚</dt><dd><b>Kings</b> step one space. Checkmate wins; stalemate, threefold repetition and 50 quiet moves are draws.</dd></div>
       </dl>
-      <p class="fine">To move, click a piece and then where it should go. Esc puts it back down.</p>
     </footer>
     <script type="module" src="/src/main.ts"></script>
   </body>

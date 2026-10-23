@@ -106,8 +106,8 @@ select {
 .masthead {
   display: grid;
   grid-template-columns: 1fr auto;
-  grid-template-areas: "title mode" "kicker mode";
-  align-items: end;
+  grid-template-areas: "title mode";
+  align-items: center;
   gap: 4px 24px;
   max-width: 1280px;
   margin: 0 auto;
@@ -122,17 +122,6 @@ select {
   text-transform: uppercase;
   letter-spacing: -0.02em;
   color: var(--ink);
-}
-.kicker {
-  grid-area: kicker;
-  margin: 8px 0 0;
-  color: var(--muted);
-  font-style: italic;
-}
-.kicker i {
-  color: var(--pink-ink);
-  font-style: normal;
-  padding: 0 2px;
 }
 
 .mode {
@@ -200,7 +189,7 @@ select {
 @media (max-width: 860px) {
   .masthead {
     grid-template-columns: 1fr;
-    grid-template-areas: "title" "kicker" "mode";
+    grid-template-areas: "title" "mode";
     padding: 16px 16px 14px;
   }
   .mode {
@@ -513,28 +502,83 @@ figcaption {
   flex-direction: column-reverse;
 }
 .player {
+  position: relative;
+  isolation: isolate;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas: "tag tag" "name taken";
-  align-items: end;
-  column-gap: 10px;
+  justify-items: start;
+  row-gap: 4px;
 }
+/* the side, printed in its own colour: white type on a black chip, black on white */
 .side-tag {
-  grid-area: tag;
-  font-size: 13px;
-  font-style: italic;
-  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
-.side-tag::before {
-  content: "○ ";
-  font-style: normal;
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px 2px 6px;
+  border: 1.5px solid var(--ink);
+  font: 800 11px/1.2 var(--display);
+  font-stretch: 130%;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background: #16151a;
+  color: #fff;
 }
-#p-black .side-tag::before {
-  content: "● ";
+#p-black .chip {
+  background: #fff;
+  color: #16151a;
+}
+.chip::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 1px #16151a;
+}
+#p-black .chip::before {
+  background: #16151a;
+  box-shadow: 0 0 0 1px #fff;
+}
+/* thinking: three dots of pink ink, pulsing in turn */
+.think {
+  display: inline-flex;
+  gap: 4px;
+  visibility: hidden;
+}
+.player.thinking .think {
+  visibility: visible;
+}
+.think i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pink);
+  animation: think 1s ease-in-out infinite;
+}
+.think i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.think i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes think {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+    transform: none;
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
 }
 .player select,
 .player .you {
-  grid-area: name;
   justify-self: start;
   max-width: 100%;
   font: 850 36px/1 var(--display);
@@ -566,28 +610,22 @@ figcaption {
 .player.to-move .you {
   box-shadow: inset 0 -0.34em 0 var(--highlight);
 }
-/* thinking: the name strains */
-.player.thinking select {
-  animation: strain 0.9s ease-in-out infinite alternate;
-}
-@keyframes strain {
-  from {
-    font-stretch: 112%;
-  }
-  to {
-    font-stretch: 72%;
-  }
-}
+/* what this side has taken piles up behind its name, like a second faint pass of ink */
 .captured {
-  grid-area: taken;
-  font-family: var(--glyphs);
-  font-size: 19px;
-  letter-spacing: -3px;
-  color: var(--muted);
+  position: absolute;
+  z-index: -1;
+  right: 0;
+  bottom: -4px;
+  max-width: 100%;
+  font: 40px/1 var(--glyphs);
+  letter-spacing: -8px;
+  color: var(--pink);
+  opacity: 0.4;
+  mix-blend-mode: var(--blend);
   white-space: nowrap;
   overflow: hidden;
-  max-width: 130px;
   direction: rtl;
+  pointer-events: none;
 }
 
 .fortune {
@@ -792,41 +830,6 @@ kbd {
   font-style: italic;
 }
 
-/* the record: a form guide per player */
-.legend {
-  margin: -4px 0 8px;
-  font-size: 12px;
-  color: var(--muted);
-}
-.legend span {
-  font-family: var(--glyphs);
-  color: var(--ink);
-}
-.form-row {
-  display: grid;
-  grid-template-columns: 96px 1fr auto;
-  align-items: baseline;
-  gap: 10px;
-  padding: 3px 0;
-  border-bottom: 1px dashed color-mix(in srgb, var(--ink) 30%, transparent);
-}
-.form-row b {
-  font: 800 15px var(--display);
-  font-stretch: 115%;
-  text-transform: uppercase;
-}
-.form-row .dots {
-  font-family: var(--glyphs);
-  letter-spacing: 1px;
-  overflow: hidden;
-  white-space: nowrap;
-}
-.form-row .wdl {
-  font-size: 13px;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
 /* ---- the back page: how the pieces move ---- */
 
 .backpage {
@@ -882,12 +885,6 @@ kbd {
 }
 .moves-guide dd {
   margin: 0;
-}
-.fine {
-  margin: 22px 0 0;
-  font-size: 13px;
-  color: var(--muted);
-  font-style: italic;
 }
 @media (max-width: 860px) {
   .backpage {

@@ -25,7 +25,7 @@ import "./ui/style.css";
 
 // ---- settings (remembered per browser; URL params win, for links and the smoke test) ----
 
-const SPEEDS = { slow: 1600, normal: 800, fast: 200 } as const;
+const SPEEDS = { slow: 3200, normal: 1600, fast: 800 } as const;
 type Speed = keyof typeof SPEEDS;
 /** the shortest a bot takes to answer you, so its move doesn't land on top of yours */
 const REPLY_MS = 400;
@@ -41,13 +41,6 @@ interface Settings {
   /** play mode: your colour and the bot you face */
   side: Color;
   opponent: BotId;
-}
-interface Result {
-  white: Player;
-  black: Player;
-  winner: Color | null;
-  reason: Outcome["reason"];
-  plies: number;
 }
 
 const store = {
@@ -78,6 +71,9 @@ const settings: Settings = store.get<Settings>("starchess.settings", {
   side: WHITE,
   opponent: "tactician"
 });
+// the page always opens on the tuned engine against its slower self, the quick one moving first
+settings.white = "tactician";
+settings.black = "oracle";
 if (isBot(params.get("white"))) settings.white = params.get("white") as BotId;
 if (isBot(params.get("black"))) settings.black = params.get("black") as BotId;
 if (params.get("speed") && params.get("speed")! in SPEEDS) settings.speed = params.get("speed") as Speed;
@@ -86,7 +82,6 @@ if (params.get("side") === "black") settings.side = BLACK;
 else if (params.get("side") === "white") settings.side = WHITE;
 /** Not remembered: the page always opens on a bot game, unless a link asks for play. */
 let mode: Mode = params.get("mode") === "play" ? "play" : "watch";
-let results: Result[] = store.get<{ list: Result[] }>("starchess.results", { list: [] }).list;
 
 // ---- DOM ----
 
@@ -295,9 +290,6 @@ function play(move: Move, score?: number) {
 }
 
 function finish(res: Outcome) {
-  results = [{ white: playerFor(WHITE), black: playerFor(BLACK), winner: res.winner, reason: res.reason, plies: game.ply }, ...results].slice(0, 50);
-  store.set("starchess.results", { list: results });
-  renderResults();
   void countdown(generation, res);
 }
 
@@ -459,36 +451,6 @@ function renderMoves() {
   movesEl.scrollTop = movesEl.scrollHeight;
 }
 
-function renderResults() {
-  const tally = new Map<Player, { w: number; d: number; l: number }>();
-  for (const r of results) {
-    for (const c of [WHITE, BLACK] as Color[]) {
-      const id = c === WHITE ? r.white : r.black;
-      const t = tally.get(id) ?? { w: 0, d: 0, l: 0 };
-      if (r.winner === null) t.d++;
-      else if (r.winner === c) t.w++;
-      else t.l++;
-      tally.set(id, t);
-    }
-  }
-  const body = $("tally");
-  body.replaceChildren();
-  for (const [id, name] of [["human", "You"], ...BOTS.map((b) => [b.id, b.name])] as [Player, string][]) {
-    const t = tally.get(id);
-    if (!t) continue;
-    // newest first; a bot playing itself shows both games
-    const form = results.flatMap((r) =>
-      ([WHITE, BLACK] as Color[]).filter((c) => (c === WHITE ? r.white : r.black) === id).map((c) => (r.winner === null ? "◐" : r.winner === c ? "●" : "○"))
-    );
-    const row = document.createElement("div");
-    row.className = "form-row";
-    row.innerHTML = `<b>${name}</b><span class="dots">${form.slice(0, 14).join("")}</span><span class="wdl">${t.w}–${t.d}–${t.l}</span>`;
-    row.title = `${t.w} won, ${t.d} drawn, ${t.l} lost`;
-    body.append(row);
-  }
-  $("results").hidden = !results.length;
-}
-
 function renderSpeed() {
   for (const b of speedBtns) b.setAttribute("aria-pressed", String(b.dataset.speed === settings.speed));
 }
@@ -595,7 +557,6 @@ document.addEventListener("keydown", (e) => {
 
 flip(mode === "play" && settings.side === BLACK);
 renderSpeed();
-renderResults();
 startGame();
 
 // for the smoke test and poking around in the console
