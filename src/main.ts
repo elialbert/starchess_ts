@@ -250,12 +250,6 @@ function startGame() {
 
 async function runGame(gen: number) {
   while (gen === generation && !over) {
-    while (!running && !stepOnce) {
-      await new Promise<void>((r) => (wake = r));
-      if (gen !== generation) return;
-    }
-    const stepping = stepOnce;
-    stepOnce = false;
     const color = game.turn;
     const player = playerFor(color);
     if (player === "human") {
@@ -264,6 +258,7 @@ async function runGame(gen: number) {
       play(move);
       continue;
     }
+    // the bot thinks even while paused, so a step is ready at once
     thinking = color;
     renderPlayers();
     renderStatus();
@@ -272,11 +267,11 @@ async function runGame(gen: number) {
     if (gen !== generation) return;
     // the opening move waits for the pieces to land
     const pace = Math.max(mode === "play" ? REPLY_MS : SPEEDS[settings.speed], game.ply ? 0 : 1200);
-    if (!stepping) await sleep(pace - (performance.now() - started));
+    if (running) await sleep(pace - (performance.now() - started));
     if (gen !== generation) return;
     thinking = null;
-    // paused while it was thinking: hold the move until play or step
-    if (!stepping && !running) {
+    // paused: hold the move until play or step
+    if (!running) {
       renderPlayers();
       while (!running && !stepOnce) {
         await new Promise<void>((r) => (wake = r));

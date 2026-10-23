@@ -870,6 +870,8 @@ kbd {
 }
 /* the initial hangs in a gutter as wide as the piece column below, so every line starts clear of it */
 .lede {
+  /* hold the whole initial, even when the text beside it is one line */
+  display: flow-root;
   font-size: 18px;
   margin: 0 0 22px;
   padding-left: 58px;
