@@ -14,7 +14,9 @@ import {
   newGame,
   setupName,
   outcome,
-  typeOf
+  typeOf,
+  PROMOTIONS,
+  inCheck
 } from "./engine/rules";
 import { randomSetup } from "./engine/setups";
 import { BoardView } from "./ui/board-view";
@@ -25,16 +27,24 @@ import "./ui/style.css";
 
 const SPEEDS = { slow: 1600, normal: 800, fast: 200 } as const;
 type Speed = keyof typeof SPEEDS;
+/** the shortest a bot takes to answer you, so its move doesn't land on top of yours */
+const REPLY_MS = 400;
+
+type Mode = "watch" | "play";
+type Player = BotId | "human";
 
 interface Settings {
   white: BotId;
   black: BotId;
   speed: Speed;
   numbers: boolean;
+  /** play mode: your colour and the bot you face */
+  side: Color;
+  opponent: BotId;
 }
 interface Result {
-  white: BotId;
-  black: BotId;
+  white: Player;
+  black: Player;
   winner: Color | null;
   reason: Outcome["reason"];
   plies: number;
@@ -64,11 +74,18 @@ const settings: Settings = store.get<Settings>("starchess.settings", {
   white: "tactician",
   black: "tactician",
   speed: "normal",
-  numbers: false
+  numbers: false,
+  side: WHITE,
+  opponent: "tactician"
 });
 if (isBot(params.get("white"))) settings.white = params.get("white") as BotId;
 if (isBot(params.get("black"))) settings.black = params.get("black") as BotId;
 if (params.get("speed") && params.get("speed")! in SPEEDS) settings.speed = params.get("speed") as Speed;
+if (isBot(params.get("opponent"))) settings.opponent = params.get("opponent") as BotId;
+if (params.get("side") === "black") settings.side = BLACK;
+else if (params.get("side") === "white") settings.side = WHITE;
+/** Not remembered: the page always opens on a bot game, unless a link asks for play. */
+let mode: Mode = params.get("mode") === "play" ? "play" : "watch";
 let results: Result[] = store.get<{ list: Result[] }>("starchess.results", { list: [] }).list;
 
 // ---- DOM ----
@@ -89,16 +106,23 @@ const evalDetail = $("eval-detail");
 const selects = [$<HTMLSelectElement>("bot-white"), $<HTMLSelectElement>("bot-black")];
 const playerRows = [$("p-white"), $("p-black")];
 const capturedEls = [$("cap-white"), $("cap-black")];
+const youEls = playerRows.map((r) => r.querySelector<HTMLElement>(".you")!);
+const undoBtn = $<HTMLButtonElement>("undo");
+const tagline = $("tagline");
+const modeBtns = [...document.querySelectorAll<HTMLButtonElement>("[data-mode]")];
+const sideBtns = [...document.querySelectorAll<HTMLButtonElement>("[data-side]")];
+const speedGroup = document.querySelector<HTMLElement>(".speed")!;
+const sideGroup = document.querySelector<HTMLElement>(".side")!;
 
 for (const [i, sel] of selects.entries()) {
   for (const b of BOTS) sel.append(new Option(b.name, b.id));
-  sel.value = i === WHITE ? settings.white : settings.black;
-  sel.title = botInfo(sel.value as BotId).blurb;
   sel.addEventListener("change", () => {
-    settings[i === WHITE ? "white" : "black"] = sel.value as BotId;
+    if (mode === "play") settings.opponent = sel.value as BotId;
+    else settings[i === WHITE ? "white" : "black"] = sel.value as BotId;
     sel.title = botInfo(sel.value as BotId).blurb;
     store.set("starchess.settings", settings);
     renderPlayers();
+    renderStatus();
   });
 }
 const speedBtns = [...document.querySelectorAll<HTMLButtonElement>("[data-speed]")];
@@ -145,10 +169,74 @@ const nudge = () => {
   wake?.();
   wake = null;
 };
-const botFor = (c: Color) => (c === WHITE ? settings.white : settings.black);
+const playerFor = (c: Color): Player =>
+  mode === "play" ? (c === settings.side ? "human" : settings.opponent) : c === WHITE ? settings.white : settings.black;
+const playerName = (p: Player) => (p === "human" ? "you" : botInfo(p).name);
+
+// ---- your moves ----
+
+/** set while waiting for you to move: hands your move to the game loop */
+let yourMove: ((m: Move) => void) | null = null;
+let yourMoves: Move[] = [];
+let picked = 0;
+const promoEl = document.createElement("div");
+promoEl.className = "promo";
+promoEl.hidden = true;
+boardWrap.append(promoEl);
+
+function awaitYourMove(): Promise<Move> {
+  yourMoves = legalMoves(game);
+  view.setMovable([...new Set(yourMoves.map((m) => m.from))]);
+  return new Promise((resolve) => (yourMove = resolve));
+}
+
+function pick(space: number) {
+  picked = space;
+  view.select(space, yourMoves.filter((m) => m.from === space).map((m) => m.to));
+}
+
+function stopListening() {
+  yourMove = null;
+  yourMoves = [];
+  promoEl.hidden = true;
+  view.setMovable([]);
+  pick(0);
+}
+
+function submit(m: Move) {
+  const resolve = yourMove;
+  stopListening();
+  resolve?.(m);
+}
+
+view.onSpace = (space) => {
+  if (!yourMove) return;
+  promoEl.hidden = true;
+  const options = yourMoves.filter((m) => m.from === picked && m.to === space);
+  if (options.length === 1) return submit(options[0]!);
+  if (options.length > 1) return choosePromotion(options);
+  // pick up one of yours, or put it back down
+  pick(space !== picked && yourMoves.some((m) => m.from === space) ? space : 0);
+};
+
+function choosePromotion(options: Move[]) {
+  promoEl.replaceChildren();
+  promoEl.classList.toggle("black", game.turn === BLACK);
+  for (const type of PROMOTIONS) {
+    const m = options.find((o) => typeOf(o.promo) === type);
+    if (!m) continue;
+    const b = document.createElement("button");
+    b.textContent = ["", "♟", "♞", "♝", "♜", "♛", "♚"][type] + "︎";
+    b.title = ["", "pawn", "knight", "bishop", "rook", "queen", "king"][type]!;
+    b.addEventListener("click", () => submit(m));
+    promoEl.append(b);
+  }
+  promoEl.hidden = false;
+}
 
 function startGame() {
   generation++;
+  stopListening();
   setup = randomSetup();
   game = newGame(setup);
   plies = [];
@@ -171,13 +259,21 @@ async function runGame(gen: number) {
     const stepping = stepOnce;
     stepOnce = false;
     const color = game.turn;
+    const player = playerFor(color);
+    if (player === "human") {
+      const move = await awaitYourMove();
+      if (gen !== generation) return;
+      play(move);
+      continue;
+    }
     thinking = color;
     renderPlayers();
+    renderStatus();
     const started = performance.now();
-    const res = await client.request(game, botFor(color), gameSeed + game.ply * 7919, gameSeed + color);
+    const res = await client.request(game, player, gameSeed + game.ply * 7919, gameSeed + color);
     if (gen !== generation) return;
     // the opening move waits for the pieces to land
-    const pace = Math.max(SPEEDS[settings.speed], game.ply ? 0 : 1200);
+    const pace = Math.max(mode === "play" ? REPLY_MS : SPEEDS[settings.speed], game.ply ? 0 : 1200);
     if (!stepping) await sleep(pace - (performance.now() - started));
     if (gen !== generation) return;
     thinking = null;
@@ -197,16 +293,21 @@ function play(move: Move) {
 }
 
 function finish(res: Outcome) {
-  results = [{ white: settings.white, black: settings.black, winner: res.winner, reason: res.reason, plies: game.ply }, ...results].slice(0, 50);
+  results = [{ white: playerFor(WHITE), black: playerFor(BLACK), winner: res.winner, reason: res.reason, plies: game.ply }, ...results].slice(0, 50);
   store.set("starchess.results", { list: results });
   renderResults();
   void countdown(generation, res);
 }
 
 async function countdown(gen: number, res: Outcome) {
-  const who =
-    res.winner === null ? "Draw" : `${COLOR_NAME[res.winner][0]!.toUpperCase() + COLOR_NAME[res.winner].slice(1)} (${botInfo(botFor(res.winner)).name}) wins`;
+  const capital = (s: string) => s[0]!.toUpperCase() + s.slice(1);
   banner.hidden = false;
+  if (mode === "play") {
+    const who = res.winner === null ? "Draw" : res.winner === settings.side ? "You win" : `${botInfo(settings.opponent).name} wins`;
+    banner.innerHTML = `<strong>${who}</strong><span>by ${res.reason}</span><small>New game for another, or undo to try again</small>`;
+    return;
+  }
+  const who = res.winner === null ? "Draw" : `${capital(COLOR_NAME[res.winner])} (${playerName(playerFor(res.winner))}) wins`;
   for (let left = 10; gen === generation; ) {
     banner.innerHTML = `<strong>${who}</strong><span>by ${res.reason}</span><small>${
       running ? `next game in ${left}s` : "paused: press play for the next game"
@@ -224,6 +325,13 @@ function renderPlayers() {
     const row = playerRows[c]!;
     row.classList.toggle("to-move", !over && game.turn === c);
     row.classList.toggle("thinking", thinking === c);
+    const player = playerFor(c);
+    youEls[c]!.hidden = player !== "human";
+    selects[c]!.hidden = player === "human";
+    if (player !== "human") {
+      selects[c]!.value = player;
+      selects[c]!.title = botInfo(player).blurb;
+    }
     // what this side has taken
     const taken = plies
       .filter((p) => p.move.captured && colorOf(p.move.piece) === c)
@@ -234,9 +342,13 @@ function renderPlayers() {
 }
 
 function renderStatus() {
-  const name = (c: Color) => `${COLOR_NAME[c]} (${botInfo(botFor(c)).name})`;
+  const name = (c: Color) => `${COLOR_NAME[c]} (${playerName(playerFor(c))})`;
+  const move = `Move ${Math.floor(game.ply / 2) + 1}: `;
   if (over) statusEl.textContent = over.winner === null ? `Draw by ${over.reason}.` : `Checkmate: ${name(over.winner)} wins.`;
-  else statusEl.textContent = `Move ${Math.floor(game.ply / 2) + 1}: ${name(game.turn)} to play.`;
+  else if (mode === "watch") statusEl.textContent = `${move}${name(game.turn)} to play.`;
+  else if (playerFor(game.turn) === "human")
+    statusEl.textContent = `${move}your move${inCheck(game.cells, game.turn) ? ", and you're in check" : ""}. Click a piece, then where it goes.`;
+  else statusEl.textContent = `${move}${botInfo(settings.opponent).name} is thinking.`;
 }
 
 function renderEval() {
@@ -282,7 +394,7 @@ function renderMoves() {
 }
 
 function renderResults() {
-  const tally = new Map<BotId, { w: number; d: number; l: number }>();
+  const tally = new Map<Player, { w: number; d: number; l: number }>();
   for (const r of results) {
     for (const c of [WHITE, BLACK] as Color[]) {
       const id = c === WHITE ? r.white : r.black;
@@ -295,11 +407,11 @@ function renderResults() {
   }
   const body = $("tally");
   body.replaceChildren();
-  for (const b of BOTS) {
-    const t = tally.get(b.id);
+  for (const [id, name] of [["human", "You"], ...BOTS.map((b) => [b.id, b.name])] as [Player, string][]) {
+    const t = tally.get(id);
     if (!t) continue;
     const tr = document.createElement("tr");
-    tr.innerHTML = `<th>${b.name}</th><td>${t.w}</td><td>${t.d}</td><td>${t.l}</td>`;
+    tr.innerHTML = `<th>${name}</th><td>${t.w}</td><td>${t.d}</td><td>${t.l}</td>`;
     body.append(tr);
   }
   $("results").hidden = !results.length;
@@ -310,9 +422,16 @@ function renderSpeed() {
 }
 
 function renderControls() {
+  const watching = mode === "watch";
+  playBtn.hidden = stepBtn.hidden = speedGroup.hidden = !watching;
+  undoBtn.hidden = sideGroup.hidden = watching;
   playBtn.textContent = running ? "Pause" : "Play";
   playBtn.setAttribute("aria-pressed", String(!running));
   stepBtn.disabled = running || !!over;
+  undoBtn.disabled = undoTo() < 0;
+  for (const b of modeBtns) b.setAttribute("aria-pressed", String(b.dataset.mode === mode));
+  for (const b of sideBtns) b.setAttribute("aria-pressed", String((b.dataset.side === "black" ? BLACK : WHITE) === settings.side));
+  tagline.textContent = watching ? "Chess on a six-pointed star. Two bots, live." : "Chess on a six-pointed star. Your move.";
 }
 
 function renderAll() {
@@ -324,6 +443,56 @@ function renderAll() {
 }
 
 // ---- controls ----
+
+/** How many plies to keep to take back your last move: before it, it's your turn again. -1 if there's none. */
+function undoTo(): number {
+  if (mode !== "play") return -1;
+  for (let n = plies.length - 1; n >= 0; n--) if (colorOf(plies[n]!.move.piece) === settings.side) return n;
+  return -1;
+}
+
+function undo() {
+  const n = undoTo();
+  if (n < 0) return;
+  generation++;
+  stopListening();
+  thinking = null;
+  plies = plies.slice(0, n);
+  game = n ? plies[n - 1]!.after : newGame(setup);
+  over = null;
+  lastScore = null;
+  view.render(game, plies.at(-1)?.move, false);
+  banner.hidden = true;
+  renderAll();
+  void runGame(generation);
+}
+
+/** Turn the board round when you play black, with your row of the panel at the bottom too. */
+function flip(flipped: boolean) {
+  view.setFlipped(flipped);
+  document.querySelector(".match")!.classList.toggle("flipped", flipped);
+}
+
+function setMode(next: Mode) {
+  if (next === mode) return;
+  mode = next;
+  running = true;
+  flip(mode === "play" && settings.side === BLACK);
+  startGame();
+}
+
+for (const b of modeBtns) b.addEventListener("click", () => setMode(b.dataset.mode as Mode));
+for (const b of sideBtns) {
+  b.addEventListener("click", () => {
+    const side = b.dataset.side === "black" ? BLACK : WHITE;
+    if (side === settings.side) return;
+    settings.side = side;
+    store.set("starchess.settings", settings);
+    flip(side === BLACK);
+    startGame();
+  });
+}
+undoBtn.addEventListener("click", undo);
 
 playBtn.addEventListener("click", () => {
   running = !running;
@@ -340,13 +509,20 @@ newBtn.addEventListener("click", () => {
 });
 document.addEventListener("keydown", (e) => {
   if (e.target instanceof HTMLSelectElement || e.metaKey || e.ctrlKey) return;
-  if (e.key === " ") {
+  if (e.key === "n") newBtn.click();
+  else if (mode === "play") {
+    if (e.key === "u") undo();
+    else if (e.key === "Escape") {
+      promoEl.hidden = true;
+      if (yourMove) pick(0);
+    }
+  } else if (e.key === " ") {
     e.preventDefault();
     playBtn.click();
   } else if (e.key === "ArrowRight" && !running) stepBtn.click();
-  else if (e.key === "n") newBtn.click();
 });
 
+flip(mode === "play" && settings.side === BLACK);
 renderSpeed();
 renderResults();
 startGame();
@@ -354,7 +530,7 @@ startGame();
 // for the smoke test and poking around in the console
 declare global {
   interface Window {
-    __sc: { readonly game: GameState; readonly plies: number; readonly over: Outcome | null };
+    __sc: { readonly game: GameState; readonly plies: number; readonly over: Outcome | null; readonly yourMoves: Move[] };
   }
 }
 window.__sc = {
@@ -366,5 +542,8 @@ window.__sc = {
   },
   get over() {
     return over;
+  },
+  get yourMoves() {
+    return yourMoves;
   }
 };

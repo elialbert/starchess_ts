@@ -1,7 +1,10 @@
 # starchess
 
-Chess on a six-pointed star, fully in the browser. The home page is a live
-bot-vs-bot game: pick the bots, set the speed, pause and step through it.
+Chess on a six-pointed star, fully in the browser. The home page opens on a
+live bot-vs-bot game: pick the bots, set the speed, pause and step through it.
+Switch to **Play a bot** to play one yourself: pick your colour and opponent,
+click a piece and then where it goes, undo as you like. Links can open
+straight into a game with `?mode=play&side=black&opponent=oracle`.
 
 A TypeScript rewrite of [elialbert/starchess](https://github.com/elialbert/starchess)
 (Rails + Angular). The rules and board come from the original engine; the
@@ -107,7 +110,7 @@ src/engine/eval.ts        the tunable evaluation
 src/engine/bots.ts        the bot roster (and the Classic search)
 src/engine/bot.worker.ts  runs a bot off the main thread
 src/ui/board-view.ts      SVG board with sliding pieces
-src/main.ts               the watch page: match loop, panel, controls
+src/main.ts               the page: match loop (bots or you), panel, controls
 tests/                    vitest: geometry, rules, engine (perft), bots
 tools/                    match, selfplay, texel, spsa, bench, setups, smoke
 ```

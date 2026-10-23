@@ -1,5 +1,6 @@
 // Headless smoke test: serves dist/ (or uses a given URL), watches a fast bot
-// game, then drives the controls: pause, step, new game. Checks the board
+// game, then drives the controls: pause, step, new game. Then plays a few
+// moves against a bot by clicking, with undo and as black. Checks the board
 // shows exactly the game's pieces, and fails on any console error.
 // Usage: node tools/smoke.mjs [width] [height] [--shots] [url]
 // Screenshots go to $SMOKE_SHOT_DIR (default /tmp).
@@ -36,6 +37,7 @@ const target = new URL(urlArg ?? "http://localhost:8898/");
 target.searchParams.set("speed", "fast");
 target.searchParams.set("white", "magpie");
 target.searchParams.set("black", "tactician");
+target.searchParams.set("opponent", "magpie");
 
 const exe = [process.env.CHROME, "/usr/bin/google-chrome", "/usr/bin/chromium", "/opt/pw-browsers/chromium-1194/chrome-linux/chrome"].find(
   (p) => p && existsSync(p)
@@ -114,6 +116,45 @@ if (!(await page.locator("#banner").isVisible())) fail("no banner at the end of 
 await shot("over");
 const over = await sc(() => window.__sc.over);
 console.log(`game over: ${JSON.stringify(over)} after ${await sc(() => window.__sc.game.ply)} plies`);
+
+// play mode: click a piece, then where it goes; the bot answers
+const pressed = (sel) => page.locator(sel).getAttribute("aria-pressed");
+const yourTurn = () => page.waitForFunction(() => window.__sc.yourMoves.length > 0, null, { timeout: 15000 });
+async function clickMove() {
+  const m = await sc(() => window.__sc.yourMoves.find((m) => !m.promo));
+  await page.click(`.hex[data-space="${m.from}"]`);
+  if ((await page.locator(".hex.target").count()) < 1) fail("picking up a piece shows nowhere to go");
+  await page.click(`.hex[data-space="${m.to}"]`);
+}
+await page.click('[data-mode="play"]');
+if ((await pressed('[data-mode="play"]')) !== "true") fail("play mode isn't selected");
+if (!(await page.locator("#play").isHidden()) || (await page.locator("#undo").isHidden())) fail("play mode shows the wrong controls");
+await page.click('[data-side="white"]');
+await yourTurn();
+if ((await sc(() => window.__sc.plies)) !== 0) fail("as white, someone moved before you");
+await clickMove();
+await page.waitForFunction(() => window.__sc.plies === 2, null, { timeout: 15000 });
+await yourTurn();
+await checkBoard("after your move and the reply");
+await shot("play");
+await page.click("#undo");
+await yourTurn();
+if ((await sc(() => window.__sc.plies)) !== 0) fail("undo didn't take back your move and the reply");
+await checkBoard("after undo");
+
+await page.click('[data-side="black"]');
+if (!(await page.locator("svg.board.flipped").count())) fail("playing black doesn't turn the board round");
+await page.waitForFunction(() => window.__sc.plies === 1 && window.__sc.yourMoves.length > 0, null, { timeout: 15000 });
+await clickMove();
+await page.waitForFunction(() => window.__sc.plies === 3, null, { timeout: 15000 });
+await checkBoard("playing black");
+await shot("play-black");
+
+// and back to watching
+await page.click('[data-mode="watch"]');
+if (await page.locator("svg.board.flipped").count()) fail("the board stays turned round when watching");
+await page.waitForFunction(() => window.__sc.plies >= 4, null, { timeout: 30000 });
+await checkBoard("watching again");
 
 if (errors.length) fail(`console errors:\n${errors.join("\n")}`);
 await browser.close();

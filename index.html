@@ -4,14 +4,18 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#101218" />
-    <meta name="description" content="Starchess: chess on a six-pointed star. Watch two bots play it out." />
+    <meta name="description" content="Starchess: chess on a six-pointed star. Watch two bots play it out, or play one yourself." />
     <title>Starchess</title>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
   </head>
   <body>
     <header class="top">
       <h1><span class="star" aria-hidden="true">✶</span> Starchess</h1>
-      <p>Chess on a six-pointed star. Two bots, live.</p>
+      <p id="tagline">Chess on a six-pointed star. Two bots, live.</p>
+      <div class="mode" role="group" aria-label="Mode">
+        <button data-mode="watch">Watch bots</button>
+        <button data-mode="play">Play a bot</button>
+      </div>
     </header>
 
     <main class="layout">
@@ -26,6 +30,7 @@
             <span class="swatch black" aria-hidden="true"></span>
             <label class="sr" for="bot-black">Black bot</label>
             <select id="bot-black"></select>
+            <span class="you" hidden>You</span>
             <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
             <span class="captured" id="cap-black" title="Pieces black has taken"></span>
           </div>
@@ -37,6 +42,7 @@
             <span class="swatch white" aria-hidden="true"></span>
             <label class="sr" for="bot-white">White bot</label>
             <select id="bot-white"></select>
+            <span class="you" hidden>You</span>
             <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
             <span class="captured" id="cap-white" title="Pieces white has taken"></span>
           </div>
@@ -48,7 +54,12 @@
           <button id="play" class="primary">Pause</button>
           <button id="step" title="One move (→)">Step</button>
           <button id="new" title="New game (n)">New game</button>
-          <div class="speed" role="group" aria-label="Speed">
+          <button id="undo" title="Take back your last move (u)" hidden>Undo</button>
+          <div class="seg side" role="group" aria-label="Play as" hidden>
+            <button data-side="white">Play white</button>
+            <button data-side="black">Play black</button>
+          </div>
+          <div class="seg speed" role="group" aria-label="Speed">
             <button data-speed="slow">Slow</button>
             <button data-speed="normal">Normal</button>
             <button data-speed="fast">Fast</button>
@@ -78,7 +89,7 @@
             <li><b>Knights</b> jump two along a line and one to the side, or one along and two to the side.</li>
             <li><b>Kings</b> step one space. Checkmate wins; stalemate, threefold repetition and 50 quiet moves are draws.</li>
           </ul>
-          <p class="fine">Keys: space pauses, → steps, n starts a new game.</p>
+          <p class="fine">To move, click a piece and then where it should go. Keys: space pauses, → steps, n starts a new game, u takes back a move.</p>
         </details>
       </aside>
     </main>

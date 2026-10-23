@@ -70,6 +70,44 @@ select {
   margin: 0;
   color: var(--muted);
 }
+.mode {
+  display: inline-flex;
+  margin-left: auto;
+  align-self: center;
+  padding: 3px;
+  gap: 3px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+.mode button {
+  background: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 7px 16px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.mode button:hover {
+  color: var(--text);
+}
+.mode button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+@media (max-width: 560px) {
+  .mode {
+    margin-left: 0;
+    width: 100%;
+  }
+  .mode button {
+    flex: 1;
+  }
+}
 
 /* ---- layout ---- */
 
@@ -144,6 +182,39 @@ select {
 .hex.check .mark {
   fill: url(#check-glow);
 }
+.hex .dot {
+  fill: rgba(30, 20, 10, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+.hex.target .dot {
+  opacity: 1;
+}
+.hex.capture .dot {
+  r: 34px;
+  fill: none;
+  stroke: rgba(30, 20, 10, 0.4);
+  stroke-width: 4;
+}
+.hex.selected .mark {
+  fill: rgba(120, 200, 255, 0.45);
+}
+.interactive .hex.movable,
+.interactive .hex.target {
+  cursor: pointer;
+}
+.interactive .hex.movable:hover .tile,
+.interactive .hex.target:hover .tile {
+  filter: brightness(1.1);
+}
+.pieces {
+  pointer-events: none;
+}
+.flipped .piece text,
+.flipped .space-id {
+  rotate: 180deg;
+}
 .space-id {
   font: 600 9px ui-sans-serif, system-ui, sans-serif;
   text-anchor: middle;
@@ -189,6 +260,38 @@ select {
 }
 .piece.gone {
   opacity: 0;
+}
+.promo {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: fit-content;
+  height: fit-content;
+  display: flex;
+  gap: 6px;
+  padding: 10px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.promo button {
+  width: 56px;
+  height: 56px;
+  font: 40px/1 "Noto Sans Symbols 2", "Segoe UI Symbol", "DejaVu Sans", serif;
+  background: var(--shade-0);
+  color: var(--white-piece);
+  -webkit-text-stroke: 1px #2b2116;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.promo.black button {
+  color: var(--black-piece);
+  -webkit-text-stroke: 0;
+}
+.promo button:hover {
+  filter: brightness(1.1);
 }
 .piece.in-check text {
   animation: shake 0.5s;
@@ -248,7 +351,12 @@ select {
 }
 
 .match {
+  display: flex;
+  flex-direction: column;
   padding: 6px 14px;
+}
+.match.flipped {
+  flex-direction: column-reverse;
 }
 .player {
   display: grid;
@@ -273,6 +381,10 @@ select {
 .player.to-move .swatch {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(226, 179, 90, 0.25);
+}
+.you {
+  font-weight: 600;
+  padding: 5px 0;
 }
 .player select {
   background: var(--bg-2);
@@ -385,20 +497,20 @@ select {
   font-weight: 600;
   min-width: 72px;
 }
-.speed {
+.seg {
   display: inline-flex;
 }
-.speed button {
+.seg button {
   border-radius: 0;
   margin-left: -1px;
 }
-.speed button:first-child {
+.seg button:first-child {
   border-radius: 8px 0 0 8px;
 }
-.speed button:last-child {
+.seg button:last-child {
   border-radius: 0 8px 8px 0;
 }
-.speed button[aria-pressed="true"] {
+.seg button[aria-pressed="true"] {
   background: var(--bg-2);
   border-color: var(--accent);
   color: var(--accent);

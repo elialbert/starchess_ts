@@ -23,7 +23,11 @@ export class BoardView {
   readonly svg: SVGSVGElement;
   private readonly hexes: SVGGElement[] = [];
   private readonly pieceLayer: SVGGElement;
+  private readonly flipper: SVGGElement;
+  private readonly center: [number, number];
   private pieces = new Map<number, SVGGElement>();
+  /** called with the space number when someone clicks a space */
+  onSpace: ((space: number) => void) | null = null;
 
   constructor(container: HTMLElement) {
     const centers = Array.from({ length: SPACE_COUNT + 1 }, (_, s) => (s ? hexCenter(s, SIZE) : [0, 0]));
@@ -39,6 +43,9 @@ export class BoardView {
       <radialGradient id="check-glow"><stop offset="0" stop-color="#ff4d4d" stop-opacity=".9"/><stop offset="1" stop-color="#ff4d4d" stop-opacity="0"/></radialGradient>
       <filter id="piece-shadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="2" stdDeviation="1.6" flood-color="#000" flood-opacity=".45"/></filter>`;
     this.svg.append(defs);
+    this.center = hexCenter(19, SIZE);
+    this.flipper = el("g");
+    this.svg.append(this.flipper);
 
     const hexLayer = el("g", { class: "hexes" });
     const points = hexPoints(SIZE * 0.97);
@@ -50,12 +57,14 @@ export class BoardView {
       const label = el("text", { class: "space-id", x: 0, y: SIZE * 0.68 });
       label.textContent = String(s);
       g.append(label);
+      g.append(el("circle", { class: "dot", r: SIZE * 0.2 }));
+      g.addEventListener("click", () => this.onSpace?.(s));
       hexLayer.append(g);
       this.hexes[s] = g;
     }
-    this.svg.append(hexLayer);
+    this.flipper.append(hexLayer);
     this.pieceLayer = el("g", { class: "pieces" });
-    this.svg.append(this.pieceLayer);
+    this.flipper.append(this.pieceLayer);
     container.append(this.svg);
   }
 
@@ -88,19 +97,24 @@ export class BoardView {
     setTimeout(() => g.remove(), 400);
   }
 
-  /** Show `g`. With `last`, the moved piece slides over; on an empty board the pieces drop in. */
-  render(g: GameState, last?: Move) {
+  /**
+   * Show `g`. With `last`, the moved piece slides over (unless `slide` is off, when `g` is
+   * already after `last`, e.g. after a takeback); on an empty board the pieces drop in.
+   */
+  render(g: GameState, last?: Move, slide = true) {
     const fresh = this.pieces.size === 0;
-    if (last) {
+    if (last && slide) {
       const mover = this.pieces.get(last.from);
       const victim = this.pieces.get(last.to);
       if (victim && victim !== mover) this.remove(victim);
       if (mover) {
         this.pieces.delete(last.from);
         this.pieces.set(last.to, mover);
-        this.place(mover, last.to);
-        // the mover stays on top while it travels
+        // the mover stays on top while it travels. Re-inserting it drops its style, so read
+        // the old position back before moving it, or there's nothing to transition from
         this.pieceLayer.append(mover);
+        void getComputedStyle(mover).transform;
+        this.place(mover, last.to);
       }
     }
     // then make sure every space matches the game, whatever happened before
@@ -134,6 +148,29 @@ export class BoardView {
       h.classList.toggle("check", s === checked);
     }
     for (const [s, piece] of this.pieces) piece.classList.toggle("in-check", s === checked && typeOf(g.cells[s]!) === KING);
+  }
+
+  /** Mark a picked-up piece and where it can go. */
+  select(from: number, targets: readonly number[] = []) {
+    for (let s = 1; s <= SPACE_COUNT; s++) {
+      const h = this.hexes[s]!;
+      h.classList.toggle("selected", s === from);
+      h.classList.toggle("target", targets.includes(s));
+      h.classList.toggle("capture", targets.includes(s) && this.pieces.has(s));
+    }
+  }
+
+  /** Spaces the player can click to pick up a piece; empty when it isn't their turn. */
+  setMovable(spaces: readonly number[]) {
+    this.svg.classList.toggle("interactive", spaces.length > 0);
+    for (let s = 1; s <= SPACE_COUNT; s++) this.hexes[s]!.classList.toggle("movable", spaces.includes(s));
+  }
+
+  /** Turn the board round, so black sits at the bottom. */
+  setFlipped(flipped: boolean) {
+    const [x, y] = this.center;
+    this.flipper.setAttribute("transform", flipped ? `rotate(180 ${x} ${y})` : "");
+    this.svg.classList.toggle("flipped", flipped);
   }
 
   /** Forget every piece (a new game starts without sliding pieces around). */
