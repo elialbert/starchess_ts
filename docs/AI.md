@@ -21,6 +21,7 @@ paired games from the 92 playable setups, and SPRT (5%/5%):
 | SEE pruning in quiescence (`seePrune`) | +21 | |
 | Texel round 3 (gen2+gen3) | +35 | current `weights.json` = `tuning/texel3.json` |
 | SPSA search margins | +15 | futility 110, rfp 85, delta 193, lmrBase 0.6, lmrDiv 2.3 |
+| Speed: eval cache, faster `evaluate`, integer evals | +99 at 50 ms | vs `impl=engine0`; +11 [-2, +23] at 20k nodes (rounding only) |
 
 Measured and left **off** (the options still exist): `seeOrder` (neutral),
 `improving` (-23), `lmp` (-61 with lmpBase 3: far too tight for this board;
@@ -32,9 +33,11 @@ Gauntlet (`npm run gauntlet -- --pairs 150`) with the current engine at 20k
 nodes: Magpie 300-0, Classic (50 ms) +545, the round-1 engine
 (`tools/refs/weights-r1.json`, `seePrune=false`) +113, itself at 5k nodes +234.
 
-Bench signature (`npm run bench -- 9`): **612,885 nodes**, about 276k nodes/s
-on the 24-core dev box when idle. Profile (`npm run profile`): `evaluate` +
-its `add` helper are ~66% of the time, move generation ~10%, `attacked` ~8%.
+Bench signature (`npm run bench -- 9`): **547,298 nodes** (612,885 before
+evals were rounded to integers). The speed work made it ~1.4x faster per node
+than `engine0` (measured A/B in one process on a loaded box; re-measure
+absolute nodes/s when idle, it was ~276k before). Profile (`npm run profile`):
+`evaluate` + `add` are still ~54%, move generation ~10%, `attacked` ~7%.
 
 ## How the pieces fit
 
@@ -58,6 +61,15 @@ its `add` helper are ~66% of the time, move generation ~10%, `attacked` ~8%.
   starting weight in `baseWeights()` (0 is fine), then re-tune.
   `weightsFromJSON` fills missing names from the base weights, and missing
   `eg.` weights from their middlegame value, so old weight files keep loading.
+  `evaluate` caches material + PST tables per weights object (by identity), so
+  never change a weights array in place; copy it (`players.ts` does).
+- `Engine.eval()` rounds the eval to an integer (via the 0.01 grid, so float
+  summation order can't flip a rounding) and caches it in a 2^18-entry table
+  keyed by the position hash. Eval only depends on cells and side to move.
+- `tools/refs/engine0/` is a frozen copy of the engine and eval as of 2c4e11e
+  (with its own weights). Play it with the player option `impl=engine0`: that's
+  how to run a time-limited match of new code against old. Freeze a new ref
+  (`engine1`, ...) the same way when the current one gets too weak to be useful.
 - `src/engine/setups.json` holds the engine's score for each of the 120
   mirrored setups (`npm run setups`). `src/engine/setups.ts` keeps the ones
   with |score| <= 300 as `PLAYABLE_SETUPS` (92 of them; the other 28 are
@@ -124,6 +136,10 @@ its `add` helper are ~66% of the time, move generation ~10%, `attacked` ~8%.
   committing UI-visible changes. CI runs all three.
 
 ## Next: the three agreed tasks
+
+Status (2026-10-22): gen4 selfplay (`data/gen4.txt`, 2.14M positions, current
+weights) is done; the speed items "eval cache" and "cut overhead in
+`evaluate`" below are done.
 
 ### 1. Another self-play -> Texel round
 

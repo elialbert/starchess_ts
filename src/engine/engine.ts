@@ -221,12 +221,13 @@ export class Position {
   attacked(sq: number, by: number): boolean {
     const c = this.cells;
     const pawn = 1 | (by << 3);
-    for (const d of PAWN_CAP[by]!) {
-      const n = NB[sq * 6 + OPP[d]!]!;
+    const caps = PAWN_CAP[by]!;
+    for (let k = 0; k < 2; k++) {
+      const n = NB[sq * 6 + OPP[caps[k]!]!]!;
       if (n && c[n] === pawn) return true;
     }
-    const knight = 2 | (by << 3);
-    for (const n of KN[sq]!) if (c[n] === knight) return true;
+    const knight = 2 | (by << 3), kn = KN[sq]!;
+    for (let k = 0; k < kn.length; k++) if (c[kn[k]!] === knight) return true;
     const king = 6 | (by << 3);
     for (let d = 0; d < 6; d++) {
       let n = NB[sq * 6 + d]!;
@@ -251,12 +252,13 @@ export class Position {
   private leastAttacker(sq: number, by: number): number {
     const c = this.cells;
     const pawn = 1 | (by << 3);
-    for (const d of PAWN_CAP[by]!) {
-      const n = NB[sq * 6 + OPP[d]!]!;
+    const caps = PAWN_CAP[by]!;
+    for (let k = 0; k < 2; k++) {
+      const n = NB[sq * 6 + OPP[caps[k]!]!]!;
       if (n && c[n] === pawn) return n;
     }
-    const knight = 2 | (by << 3);
-    for (const n of KN[sq]!) if (c[n] === knight) return n;
+    const knight = 2 | (by << 3), kn = KN[sq]!;
+    for (let k = 0; k < kn.length; k++) if (c[kn[k]!] === knight) return kn[k]!;
     // sliders: the first piece along each line, cheapest type wins
     let best = 0, bestType = 9;
     for (let d = 0; d < 6; d++) {
@@ -335,26 +337,29 @@ export class Position {
       if (t === 1) {
         const f = NB[s * 6 + PAWN_FWD[side]!]!;
         if (f && !c[f]) {
-          if (IS_PROMO[side]![f]) for (const pt of PROMO_TYPES) out[n++] = encode(s, f, pt);
+          if (IS_PROMO[side]![f]) for (let k = 0; k < 4; k++) out[n++] = encode(s, f, PROMO_TYPES[k]!);
           else if (!capturesOnly) {
             out[n++] = encode(s, f);
             const f2 = NB[f * 6 + PAWN_FWD[side]!]!;
             if (IS_START[side]![s] && !(this.limp & (1 << LIMP_BIT[s]!)) && f2 && !c[f2]) {
-              if (IS_PROMO[side]![f2]) for (const pt of PROMO_TYPES) out[n++] = encode(s, f2, pt);
+              if (IS_PROMO[side]![f2]) for (let k = 0; k < 4; k++) out[n++] = encode(s, f2, PROMO_TYPES[k]!);
               else out[n++] = encode(s, f2);
             }
           }
         }
-        for (const d of PAWN_CAP[side]!) {
-          const to = NB[s * 6 + d]!;
+        const caps = PAWN_CAP[side]!;
+        for (let j = 0; j < 2; j++) {
+          const to = NB[s * 6 + caps[j]!]!;
           const q = to ? c[to]! : 0;
           if (q && q >> 3 !== side) {
-            if (IS_PROMO[side]![to]) for (const pt of PROMO_TYPES) out[n++] = encode(s, to, pt);
+            if (IS_PROMO[side]![to]) for (let k = 0; k < 4; k++) out[n++] = encode(s, to, PROMO_TYPES[k]!);
             else out[n++] = encode(s, to);
           }
         }
       } else if (t === 2) {
-        for (const to of KN[s]!) {
+        const kn = KN[s]!;
+        for (let j = 0; j < kn.length; j++) {
+          const to = kn[j]!;
           const q = c[to]!;
           if (q ? q >> 3 !== side : !capturesOnly) out[n++] = encode(s, to);
         }
@@ -367,7 +372,8 @@ export class Position {
         }
       } else {
         const dirs = t === 3 ? DIAG : t === 4 ? ROOK_DIRS : ALL;
-        for (const d of dirs) {
+        for (let j = 0; j < dirs.length; j++) {
+          const d = dirs[j]!;
           let to = NB[s * 6 + d]!;
           while (to) {
             const q = c[to]!;
@@ -380,8 +386,8 @@ export class Position {
           }
         }
         if (t === 4 && !capturesOnly) {
-          for (const d of DIAG) {
-            const to = NB[s * 6 + d]!;
+          for (let j = 0; j < 4; j++) {
+            const to = NB[s * 6 + DIAG[j]!]!;
             if (to && !c[to]) out[n++] = encode(s, to);
           }
         }
@@ -481,6 +487,8 @@ class Stop extends Error {}
 
 const EXACT = 1, LOWER = 2, UPPER = 3;
 
+const EVAL_CACHE_SIZE = 1 << 18;
+
 export class Engine {
   readonly opts: SearchOptions;
   readonly weights: Weights;
@@ -502,6 +510,10 @@ export class Engine {
   private pvTable = new Int32Array(MAX_PLY * MAX_PLY);
   private pvLen = new Int32Array(MAX_PLY);
   private evalStack = new Int32Array(MAX_PLY);
+  // static evals by position hash: quiescence revisits a lot of positions
+  private ecKey = new Int32Array(EVAL_CACHE_SIZE);
+  private ecVal = new Int16Array(EVAL_CACHE_SIZE);
+  private ecSet = new Uint8Array(EVAL_CACHE_SIZE);
 
   constructor(weights: Weights = DEFAULT_WEIGHTS, opts: Partial<SearchOptions> = {}) {
     this.weights = weights;
@@ -526,7 +538,16 @@ export class Engine {
 
   private eval(): number {
     const p = this.pos;
-    let e = evaluate(p.cells, p.side, this.weights);
+    const i = p.lo & (EVAL_CACHE_SIZE - 1);
+    let e: number;
+    if (this.ecSet[i] && this.ecKey[i] === p.hi) e = this.ecVal[i]!;
+    else {
+      // to the 0.01 grid first, so float error in the sum can't flip a rounding at .5
+      e = Math.round(Math.round(evaluate(p.cells, p.side, this.weights) * 100) / 100);
+      this.ecKey[i] = p.hi;
+      this.ecVal[i] = e;
+      this.ecSet[i] = 1;
+    }
     if (this.opts.noise) {
       const h = Math.imul(p.lo ^ this.opts.seed, 0x9e3779b1) >>> 0;
       e += Math.round(((h / 4294967296) * 2 - 1) * this.opts.noise);

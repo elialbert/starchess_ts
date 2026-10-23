@@ -147,20 +147,35 @@ const PAWN_CAP = [
 const DIAG = [1, 2, 4, 5];
 const ROOK_DIRS = [0, 3];
 const ALL = [0, 1, 2, 3, 4, 5];
-const SLIDE_DIRS = [[], [], [], DIAG, ROOK_DIRS, ALL, []] as number[][];
+const SLIDE_DIRS = [[], [], [], DIAG, ROOK_DIRS, ALL, []].map((d) => Int8Array.from(d));
 const RANK = [0, 1, 3, 3, 3, 9, 100];
 
-// the running total, kept at module level so `add` needn't be a closure
-let score = 0;
+// the running totals, kept at module level so `add` needn't be a closure;
+// middlegame and endgame are summed apart and blended once at the end
+let mg = 0, eg = 0;
 let curW: ArrayLike<number> = [];
-let curTrace: Float64Array | null = null;
-let mgF = 1, egF = 0;
+let tracing = false;
+/** feature counts while tracing */
+const cnt = new Float64Array(NF);
 function add(i: number, v: number) {
-  score += (curW[i]! * mgF + curW[NF + i]! * egF) * v;
-  if (curTrace) {
-    curTrace[i]! += v * mgF;
-    curTrace[NF + i]! += v * egF;
-  }
+  mg += curW[i]! * v;
+  eg += curW[NF + i]! * v;
+  if (tracing) cnt[i]! += v;
+}
+
+/** material + piece-square, signed for white, by piece code * NSQ + space; rebuilt when the weights change */
+const psqMg = new Float64Array(16 * NSQ), psqEg = new Float64Array(16 * NSQ);
+let psqW: ArrayLike<number> | null = null;
+function buildPsq(W: ArrayLike<number>) {
+  psqW = W;
+  for (let c = 0; c < 2; c++)
+    for (let t = 1; t <= 6; t++)
+      for (let s = 1; s < NSQ; s++) {
+        const i = (t | (c << 3)) * NSQ + s, sign = c ? -1 : 1;
+        const pst = I_PST + t * NORB + ORB[c]![s]!;
+        psqMg[i] = sign * (W[I_VAL + t]! + W[pst]!);
+        psqEg[i] = sign * (W[NF + I_VAL + t]! + W[NF + pst]!);
+      }
 }
 
 const att = [new Int8Array(NSQ), new Int8Array(NSQ)];
@@ -172,49 +187,62 @@ const pawnCols = [new Int8Array(9), new Int8Array(9)];
 /**
  * Score of `cells` for the side to move, in centipawns. With `trace`, adds
  * each feature's count (white minus black) into it: then the white-view score
- * is exactly the dot product of the weights and the trace.
+ * is the dot product of the weights and the trace. Material and piece-square
+ * tables are cached per weights object, so don't change `W` in place.
  */
 export function evaluate(cells: Int8Array, side: number, W: ArrayLike<number>, trace?: Float64Array): number {
   curW = W;
-  curTrace = trace ?? null;
-  score = 0;
-  let phase = 0;
-  for (let s = 1; s < NSQ; s++) phase += PHASE[cells[s]! & 7]!;
-  mgF = Math.min(phase, PHASE_MAX) / PHASE_MAX;
-  egF = 1 - mgF;
-  for (let c = 0; c < 2; c++) {
-    att[c]!.fill(0);
-    patt[c]!.fill(0);
-    low[c]!.fill(255);
-  }
-  const kings = [0, 0];
+  tracing = trace !== undefined;
+  if (tracing) cnt.fill(0);
+  mg = eg = 0;
+  if (W !== psqW) buildPsq(W);
+  const att0 = att[0]!, att1 = att[1]!, patt0 = patt[0]!, patt1 = patt[1]!, low0 = low[0]!, low1 = low[1]!;
+  att0.fill(0);
+  att1.fill(0);
+  patt0.fill(0);
+  patt1.fill(0);
+  low0.fill(255);
+  low1.fill(255);
+  let phase = 0, king0 = 0, king1 = 0;
 
   for (let s = 1; s < NSQ; s++) {
     const p = cells[s]!;
     if (!p) continue;
     const t = p & 7, c = p >> 3, sign = c ? -1 : 1;
-    const a = att[c]!, lo = low[c]!, rank = RANK[t]!;
-    add(I_VAL + t, sign);
-    add(I_PST + t * NORB + ORB[c]![s]!, sign);
+    const a = c ? att1 : att0, lo = c ? low1 : low0, rank = RANK[t]!;
+    phase += PHASE[t]!;
+    if (tracing) {
+      add(I_VAL + t, sign);
+      add(I_PST + t * NORB + ORB[c]![s]!, sign);
+    } else {
+      mg += psqMg[p * NSQ + s]!;
+      eg += psqEg[p * NSQ + s]!;
+    }
     let mob = 0;
     if (t === 1) {
-      for (const d of PAWN_CAP[c]!) {
-        const n = NB[s * 6 + d]!;
+      const pc = PAWN_CAP[c]!, pa = c ? patt1 : patt0;
+      for (let j = 0; j < 2; j++) {
+        const n = NB[s * 6 + pc[j]!]!;
         if (n) {
           a[n]!++;
-          patt[c]![n] = 1;
+          pa[n] = 1;
           if (rank < lo[n]!) lo[n] = rank;
         }
       }
+      pawnCols[c]![COLUMN[s]!]!++;
+      continue;
     } else if (t === 2) {
-      for (const n of KN[s]!) {
+      const kn = KN[s]!;
+      for (let j = 0; j < kn.length; j++) {
+        const n = kn[j]!;
         a[n]!++;
         if (rank < lo[n]!) lo[n] = rank;
         const q = cells[n]!;
         if (!q || q >> 3 !== c) mob++;
       }
     } else if (t === 6) {
-      kings[c] = s;
+      if (c) king1 = s;
+      else king0 = s;
       for (let d = 0; d < 6; d++) {
         const n = NB[s * 6 + d]!;
         if (!n) continue;
@@ -224,7 +252,9 @@ export function evaluate(cells: Int8Array, side: number, W: ArrayLike<number>, t
         if (!q || q >> 3 !== c) mob++;
       }
     } else {
-      for (const d of SLIDE_DIRS[t]!) {
+      const dirs = SLIDE_DIRS[t]!;
+      for (let j = 0; j < dirs.length; j++) {
+        const d = dirs[j]!;
         let n = NB[s * 6 + d]!;
         while (n) {
           a[n]!++;
@@ -239,8 +269,8 @@ export function evaluate(cells: Int8Array, side: number, W: ArrayLike<number>, t
         }
       }
       if (t === 4) {
-        for (const d of DIAG) {
-          const n = NB[s * 6 + d]!;
+        for (let j = 0; j < 4; j++) {
+          const n = NB[s * 6 + DIAG[j]!]!;
           if (n && !cells[n]) mob++;
         }
       }
@@ -251,17 +281,20 @@ export function evaluate(cells: Int8Array, side: number, W: ArrayLike<number>, t
   for (let s = 1; s < NSQ; s++) {
     const p = cells[s]!;
     if (!p) continue;
-    const t = p & 7, c = p >> 3, o = c ^ 1, sign = c ? -1 : 1;
+    const t = p & 7;
     if (t === 6) continue;
-    if (att[o]![s] && !att[c]![s]) add(I_HANG + t, sign);
-    if (t !== 1 && patt[o]![s]) add(I_PTHREAT + t, sign);
-    else if (low[o]![s]! < RANK[t]!) add(I_LTHREAT + t, sign);
+    const c = p >> 3, sign = c ? -1 : 1;
+    const own = c ? att1 : att0, opp = c ? att0 : att1, oppP = c ? patt0 : patt1;
+    if (opp[s] && !own[s]) add(I_HANG + t, sign);
+    if (t !== 1 && oppP[s]) add(I_PTHREAT + t, sign);
+    else if ((c ? low0 : low1)[s]! < RANK[t]!) add(I_LTHREAT + t, sign);
     if (t === 1) {
-      if (patt[c]![s]) add(I_PDEF, sign);
-      const enemyPawn = 1 | (o << 3);
+      if ((c ? patt1 : patt0)[s]) add(I_PDEF, sign);
+      const enemyPawn = 1 | ((c ^ 1) << 3);
+      const ahead = AHEAD[c]![s]!;
       let passed = true;
-      for (const a of AHEAD[c]![s]!) {
-        if (cells[a] === enemyPawn) {
+      for (let j = 0; j < ahead.length; j++) {
+        if (cells[ahead[j]!] === enemyPawn) {
           passed = false;
           break;
         }
@@ -269,29 +302,40 @@ export function evaluate(cells: Int8Array, side: number, W: ArrayLike<number>, t
       if (passed) add(I_PASSED + Math.min(TO_EDGE[c]![s]!, 6), sign);
       const fwd = NB[s * 6 + (c ? 3 : 0)]!;
       if (fwd && cells[fwd]) add(I_BLOCKED, sign);
-      pawnCols[c]![COLUMN[s]!]!++;
     }
   }
   for (let c = 0; c < 2; c++) {
-    for (let col = 0; col < 9; col++) if (pawnCols[c]![col]! > 1) add(I_DOUBLED, (c ? -1 : 1) * (pawnCols[c]![col]! - 1));
-    pawnCols[c]!.fill(0);
+    const pc = pawnCols[c]!;
+    for (let col = 0; col < 9; col++) if (pc[col]! > 1) add(I_DOUBLED, (c ? -1 : 1) * (pc[col]! - 1));
+    pc.fill(0);
   }
 
   for (let c = 0; c < 2; c++) {
-    const k = kings[c]!;
+    const k = c ? king1 : king0;
     if (!k) continue;
-    const sign = c ? -1 : 1, o = c ^ 1;
-    let hits = att[o]![k]!, shelter = 0;
+    const opp = c ? att0 : att1;
+    let hits = opp[k]!, shelter = 0;
     for (let d = 0; d < 6; d++) {
       const n = NB[k * 6 + d]!;
       if (!n) continue;
-      hits += att[o]![n]!;
+      hits += opp[n]!;
       const q = cells[n]!;
       if (q && q >> 3 === c) shelter++;
     }
+    const sign = c ? -1 : 1;
     add(I_KZONE + Math.min(hits, 7), sign);
     add(I_SHELTER + shelter, sign);
   }
   add(I_TEMPO, side ? -1 : 1);
+
+  const mgF = Math.min(phase, PHASE_MAX) / PHASE_MAX, egF = 1 - mgF;
+  if (trace) {
+    for (let i = 0; i < NF; i++) {
+      if (!cnt[i]) continue;
+      trace[i]! += cnt[i]! * mgF;
+      trace[NF + i]! += cnt[i]! * egF;
+    }
+  }
+  const score = mg * mgF + eg * egF;
   return side ? -score : score;
 }
