@@ -5,11 +5,19 @@ import { newGame, parseSetup } from "../../src/engine/rules";
 import { playGame } from "./game";
 import { type Player, loadWeights, makePlayer, parseSpec } from "./players";
 
+// Players are kept between tasks (their engines keep their tables), but only a
+// few: SPSA makes two new specs every iteration, and each engine holds several
+// MB, so an unbounded cache ran a long SPSA job out of memory.
+const MAX_PLAYERS = 8;
 const players = new Map<string, Player>();
 const player = (spec: string, role: string) => {
   const key = role + "|" + spec;
-  if (!players.has(key)) players.set(key, makePlayer(parseSpec(spec)));
-  return players.get(key)!;
+  let p = players.get(key);
+  if (!p) {
+    if (players.size >= MAX_PLAYERS) players.delete(players.keys().next().value!);
+    players.set(key, (p = makePlayer(parseSpec(spec))));
+  }
+  return p;
 };
 
 export const handlers = {

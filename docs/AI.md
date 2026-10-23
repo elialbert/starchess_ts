@@ -118,6 +118,12 @@ absolute nodes/s when idle, it was ~276k before). Profile (`npm run profile`):
   timeout moves a foreground command to the background. A session restart
   kills running jobs, so log progress (SPSA does, one line per iteration, and
   its final θ can be read off the last line).
+- **Memory:** the box has 30 GB. Texel on ~4.3M positions peaks around
+  15 GB. A global OOM kill takes the whole tmux scope (and the Claude session
+  in it) down with the job, so start long jobs in their own capped scope:
+  `systemd-run --user --scope -q -p MemoryMax=14G -p MemorySwapMax=0 npm run ...`.
+  Then only the job dies. (A worker-side player cache that never evicted once
+  grew SPSA to 27 GB; it's bounded now.)
 - **Don't run two pool jobs at once** unless you cap threads
   (`--threads 21`): the box has 24 cores and each pool takes N-2. Texel
   is single-threaded and can run alongside a match.
