@@ -22,7 +22,8 @@ const params = (args.params ?? "").split(",").filter(Boolean).map((p) => {
   return { name: name!, value: Number(start), c: Number(step) };
 });
 if (!params.length) throw new Error("--params name:start:step,...");
-const integer = (n: string) => !/Margin|contempt|noise|aspiration/.test(n) && !n.startsWith("w.") ? true : false;
+const INTEGER_OPTIONS = ["ttBits", "nullBase", "nullDiv", "lmrMinMoves", "lmpBase"];
+const integer = (n: string) => INTEGER_OPTIONS.includes(n);
 const fmt = (n: string, x: number) => (integer(n) ? Math.round(x) : Math.round(x * 10) / 10);
 const spec = (vals: number[]) => base + "," + params.map((p, i) => `${p.name}=${fmt(p.name, vals[i]!)}`).join(",");
 
