@@ -145,7 +145,7 @@ div #gameinfo {
 }
 .ui-switch {
   float: right;
-  margin: 10px 0;
+  margin: 10px 0 14px;
   display: flex;
   border: 1px solid #555;
   border-radius: 999px;

@@ -172,6 +172,7 @@ select {
 .ui-switch {
   grid-area: switch;
   justify-self: end;
+  margin-bottom: 8px;
   display: flex;
   border: 2px solid var(--ink);
   border-radius: 999px;
