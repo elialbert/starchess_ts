@@ -6,6 +6,12 @@ Switch to **Play a bot** to play one yourself: pick your colour and opponent,
 click a piece and then where it goes, undo as you like. Links can open
 straight into a game with `?mode=play&side=black&opponent=oracle`.
 
+The pill at the top swaps to `?ai=nope`: the original Rails app's hand-coded
+home page, just its header and two bots playing on its board (the 2015
+stylesheet, Bootstrap 3, rotated-square hexes and the Wikimedia piece PNGs by
+Cburnett, GFDL/BSD/GPL), on the same engine and bots.
+It lives in `src/old/`; `src/entry.ts` picks which look to load.
+
 A TypeScript rewrite of [elialbert/starchess](https://github.com/elialbert/starchess)
 (Rails + Angular). The rules and board come from the original engine; the
 bots are new.

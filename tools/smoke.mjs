@@ -156,6 +156,27 @@ if (await page.locator("svg.board.flipped").count()) fail("the board stays turne
 await page.waitForFunction(() => window.__sc.plies >= 4, null, { timeout: 30000 });
 await checkBoard("watching again");
 
+// the pill swaps in the old hand-coded look, on the same engine
+await page.click(".ui-switch a:not([aria-current])");
+await page.waitForURL(/ai=nope/);
+await page.waitForFunction(() => document.body.style.visibility === "visible", null, { timeout: 10000 });
+if ((await page.locator(".innerclip[data-space]").count()) !== 37) fail("the old board doesn't have 37 spaces");
+await page.waitForFunction(() => window.__sc.plies >= 4, null, { timeout: 30000 });
+const oldProblem = await sc(() => {
+  const cells = window.__sc.game.cells;
+  for (const img of document.querySelectorAll(".innerclip[data-space] img")) {
+    const space = +img.parentElement.dataset.space;
+    if (img.getAttribute("src").endsWith("empty.png") !== !cells[space]) return `old board space ${space} is wrong`;
+  }
+  return null;
+});
+if (oldProblem) fail(oldProblem);
+await shot("old");
+await page.click(".ui-switch a:not([aria-current])");
+await page.waitForFunction(() => !location.search.includes("ai=nope") && document.querySelectorAll(".hex").length === 37, null, {
+  timeout: 10000
+});
+
 if (errors.length) fail(`console errors:\n${errors.join("\n")}`);
 await browser.close();
 server?.close();

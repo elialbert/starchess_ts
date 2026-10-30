@@ -22,6 +22,7 @@ import { randomSetup } from "./engine/setups";
 import { BoardView } from "./ui/board-view";
 import { BotClient } from "./ui/bot-client";
 import "./ui/style.css";
+import { uiSwitch } from "./ui/ui-switch";
 
 // ---- settings (remembered per browser; URL params win, for links and the smoke test) ----
 
@@ -109,6 +110,7 @@ const modeBtns = [...document.querySelectorAll<HTMLButtonElement>("[data-mode]")
 const sideBtns = [...document.querySelectorAll<HTMLButtonElement>("[data-side]")];
 const speedGroup = document.querySelector<HTMLElement>(".speed")!;
 const sideGroup = document.querySelector<HTMLElement>(".side")!;
+document.querySelector(".masthead")!.prepend(uiSwitch());
 
 for (const [i, sel] of selects.entries()) {
   for (const b of BOTS) sel.append(new Option(b.name, b.id));

@@ -7,6 +7,8 @@
     <meta name="theme-color" content="#141318" media="(prefers-color-scheme: dark)" />
     <meta name="description" content="Starchess: chess on a six-pointed star. Watch two bots play it out, or play one yourself." />
     <title>Starchess</title>
+    <!-- shown once the chosen look's stylesheet is in (src/entry.ts) -->
+    <style>body { visibility: hidden; }</style>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -101,6 +103,6 @@
         <div><dt>♚</dt><dd><b>Kings</b> step one space. Checkmate wins; stalemate, threefold repetition and 50 quiet moves are draws.</dd></div>
       </dl>
     </footer>
-    <script type="module" src="/src/main.ts"></script>
+    <script type="module" src="/src/entry.ts"></script>
   </body>
 </html>

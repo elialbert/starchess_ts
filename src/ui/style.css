@@ -51,6 +51,8 @@
 html,
 body {
   margin: 0;
+  /* index.html hides the page until this stylesheet is in */
+  visibility: visible;
   background: var(--paper);
   color: var(--ink);
   font: 16px/1.5 var(--text);
@@ -106,7 +108,7 @@ select {
 .masthead {
   display: grid;
   grid-template-columns: 1fr auto;
-  grid-template-areas: "title mode";
+  grid-template-areas: "switch switch" "title mode";
   align-items: center;
   gap: 4px 24px;
   max-width: 1280px;
@@ -166,6 +168,30 @@ select {
   color: #fff;
 }
 
+/* the pill to the old hand-coded look and back */
+.ui-switch {
+  grid-area: switch;
+  justify-self: end;
+  display: flex;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1;
+}
+.ui-switch a {
+  padding: 6px 12px;
+  color: var(--ink);
+  text-decoration: none;
+}
+.ui-switch a:hover {
+  background: var(--highlight);
+}
+.ui-switch a[aria-current] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
 /* ---- layout ---- */
 
 .layout {
@@ -189,7 +215,7 @@ select {
 @media (max-width: 860px) {
   .masthead {
     grid-template-columns: 1fr;
-    grid-template-areas: "title" "mode";
+    grid-template-areas: "switch" "title" "mode";
     padding: 16px 16px 14px;
   }
   .mode {
